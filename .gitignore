@@ -14,6 +14,7 @@ web/lib
 
 *.so
 *.dll
+*.exe
 *.a
 plugins/unity/
 plugins/flutter/example/web/lib/pocketpy.js
