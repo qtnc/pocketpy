@@ -14,6 +14,7 @@ web/lib
 
 *.so
 *.dll
+*.a
 plugins/unity/
 plugins/flutter/example/web/lib/pocketpy.js
 plugins/flutter/example/web/lib/pocketpy.wasm
@@ -38,3 +39,6 @@ libpocketpy.dylib
 
 .xmake/
 
+obj/
+objd/
+out*.txt
