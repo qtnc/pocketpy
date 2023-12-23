@@ -1150,10 +1150,14 @@ PyObject* VM::bind(PyObject* obj, const char* sig, const char* docstring, Native
     return f_obj;
 }
 
-PyObject* VM::bind_property(PyObject* obj, Str name, NativeFuncC fget, NativeFuncC fset){
+PyObject* VM::bind_property(PyObject* obj, Str name, NativeFuncC fget, NativeFuncC fset, UserData fgudata, UserData fsudata){
     PyObject* _0 = heap.gcnew<NativeFunc>(tp_native_func, fget, 1, false);
     PyObject* _1 = vm->None;
-    if(fset != nullptr) _1 = heap.gcnew<NativeFunc>(tp_native_func, fset, 2, false);
+    PK_OBJ_GET(NativeFunc, _0).set_userdata(fgudata);
+    if(fset != nullptr) {
+_1 = heap.gcnew<NativeFunc>(tp_native_func, fset, 2, false);
+    PK_OBJ_GET(NativeFunc, _1).set_userdata(fsudata);
+}
     Str signature = name;
     int pos = name.index(":");
     if(pos > 0) name = name.substr(0, pos).strip();

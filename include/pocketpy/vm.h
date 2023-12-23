@@ -475,7 +475,11 @@ public:
     // new style binding api
     PyObject* bind(PyObject*, const char*, const char*, NativeFuncC, UserData userdata={});
     PyObject* bind(PyObject*, const char*, NativeFuncC, UserData userdata={});
-    PyObject* bind_property(PyObject*, Str, NativeFuncC fget, NativeFuncC fset=nullptr);
+    PyObject* bind_property(PyObject*, Str, NativeFuncC fget, NativeFuncC fset=nullptr, UserData fgudata ={}, UserData fsudata ={});
+template<class T> void bindf (PyObject*, const char*, const T&, const char* = nullptr);
+template<typename Ret, typename... Params> void bindf (PyObject* obj, const char* sig, Ret(*func)(Params...), const char* doc);
+template<typename Ret, typename T, typename... Params> void bindf (PyObject* obj, const char* sig, Ret(T::*func)(Params...), const char* doc);
+template<class T, class P>void bindf (PyObject* obj, const char* name, P T::*prop);
 };
 
 DEF_NATIVE_2(Str, tp_str)
@@ -662,4 +666,10 @@ PyObject* PyArrayGetItem(VM* vm, PyObject* obj, PyObject* index){
     i = vm->normalized_index(i, self.size());
     return self[i];
 }
+
+template<class T> 
+void VM::bindf (PyObject* mod, const char* sig, const T& objToBind, const char* doc) {
+throw std::logic_error( std::string("Failed to bind ") +sig);
+}
+
 }   // namespace pkpy

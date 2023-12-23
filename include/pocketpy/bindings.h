@@ -73,6 +73,37 @@ void _bind(VM* vm, PyObject* obj, const char* sig, Ret(T::*func)(Params...)){
     auto proxy = new NativeProxyMethodC<Ret, T, Params...>(func);
     vm->bind(obj, sig, proxy_wrapper, proxy);
 }
+
+template<typename Ret, typename... Params>
+void VM::bindf (PyObject* obj, const char* sig, Ret(*func)(Params...), const char* doc){
+    auto proxy = new NativeProxyFuncC<Ret, Params...>(func);
+    this->bind(obj, sig, doc, proxy_wrapper, proxy);
+}
+
+template<typename Ret, typename T, typename... Params>
+void VM::bindf (PyObject* obj, const char* sig, Ret(T::*func)(Params...), const char* doc){
+    auto proxy = new NativeProxyMethodC<Ret, T, Params...>(func);
+    this->bind(obj, sig, doc, proxy_wrapper, proxy);
+}
+
+template<class T, class P>
+void VM::bindf (PyObject* obj, const char* name, P T::*prop) {
+typedef P T::*Prop;
+this->bind_property(obj, name,
+[](VM* vm, ArgsView args){
+Prop prop = lambda_get_userdata<Prop>(args.begin());
+T& self = _py_cast<T&>(vm, args[0]);
+return py_var(vm, self.*prop);
+},
+[](VM* vm, ArgsView args){
+Prop prop = lambda_get_userdata<Prop>(args.begin());
+T& self = _py_cast<T&>(vm, args[0]);
+self.*prop = py_cast<P>(vm, args[1]);
+return vm->None;
+},
+prop, prop);
+}
+
 /*****************************************************************/
 #define PY_FIELD(T, NAME, REF, EXPR)       \
         vm->bind_property(type, NAME,               \
