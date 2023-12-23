@@ -206,7 +206,6 @@ namespace pkpy{
             name.sv(),
             subclass_enabled,
         };
-        if(mod != nullptr) mod->attr().set(name, obj);
         _all_types.push_back(info);
         return obj;
     }
@@ -582,7 +581,7 @@ PyObject* VM::new_module(Str name, Str package) {
 }
 
 static std::string _opcode_argstr(VM* vm, Bytecode byte, const CodeObject* co){
-    std::string argStr = byte.arg == BC_NOARG ? "" : std::to_string(byte.arg);
+    std::string argStr = std::to_string(byte.arg);
     switch(byte.op){
         case OP_LOAD_CONST: case OP_FORMAT_STRING: case OP_IMPORT_PATH:
             if(vm != nullptr){
@@ -711,29 +710,29 @@ void VM::_log_s_data(const char* title) {
 void VM::init_builtin_types(){
     _all_types.push_back({heap._new<Type>(Type(1), Type(0)), -1, nullptr, "object", true});
     _all_types.push_back({heap._new<Type>(Type(1), Type(1)), 0, nullptr, "type", false});
-    tp_object = 0; tp_type = 1;
 
-    tp_int = _new_type_object("int");
-    tp_float = _new_type_object("float");
-    if(tp_int.index != kTpIntIndex || tp_float.index != kTpFloatIndex) FATAL_ERROR();
+    PK_ASSERT(tp_int == _new_type_object("int"));
+    PK_ASSERT(tp_float == _new_type_object("float"));
 
-    tp_bool = _new_type_object("bool");
-    tp_str = _new_type_object("str");
-    tp_list = _new_type_object("list");
-    tp_tuple = _new_type_object("tuple");
-    tp_slice = _new_type_object("slice");
-    tp_range = _new_type_object("range");
-    tp_module = _new_type_object("module");
-    tp_function = _new_type_object("function");
-    tp_native_func = _new_type_object("native_func");
-    tp_bound_method = _new_type_object("bound_method");
-    tp_super = _new_type_object("super");
-    tp_exception = _new_type_object("_Exception");
-    tp_bytes = _new_type_object("bytes");
-    tp_mappingproxy = _new_type_object("mappingproxy");
-    tp_dict = _new_type_object("dict");
-    tp_property = _new_type_object("property");
-    tp_star_wrapper = _new_type_object("_star_wrapper");
+    PK_ASSERT(tp_bool == _new_type_object("bool"));
+    PK_ASSERT(tp_str == _new_type_object("str"));
+    PK_ASSERT(tp_list == _new_type_object("list"));
+    PK_ASSERT(tp_tuple == _new_type_object("tuple"));
+
+    PK_ASSERT(tp_slice == _new_type_object("slice"));
+    PK_ASSERT(tp_range == _new_type_object("range"));
+    PK_ASSERT(tp_module == _new_type_object("module"));
+    PK_ASSERT(tp_function == _new_type_object("function"));
+    PK_ASSERT(tp_native_func == _new_type_object("native_func"));
+    PK_ASSERT(tp_bound_method == _new_type_object("bound_method"));
+
+    PK_ASSERT(tp_super == _new_type_object("super"));
+    PK_ASSERT(tp_exception == _new_type_object("_Exception"));
+    PK_ASSERT(tp_bytes == _new_type_object("bytes"));
+    PK_ASSERT(tp_mappingproxy == _new_type_object("mappingproxy"));
+    PK_ASSERT(tp_dict == _new_type_object("dict"));
+    PK_ASSERT(tp_property == _new_type_object("property"));
+    PK_ASSERT(tp_star_wrapper == _new_type_object("_star_wrapper"));
 
     this->None = heap._new<Dummy>(_new_type_object("NoneType"));
     this->NotImplemented = heap._new<Dummy>(_new_type_object("NotImplementedType"));
@@ -820,7 +819,7 @@ void VM::_prepare_py_call(PyObject** buffer, ArgsView args, ArgsView kwargs, con
     // set extra varnames to PY_NULL
     for(int j=i; j<co_nlocals; j++) buffer[j] = PY_NULL;
     // prepare kwdefaults
-    for(auto& kv: decl->kwargs) buffer[kv.key] = kv.value;
+    for(auto& kv: decl->kwargs) buffer[kv.index] = kv.value;
     
     // handle *args
     if(decl->starred_arg != -1){
@@ -831,7 +830,7 @@ void VM::_prepare_py_call(PyObject** buffer, ArgsView args, ArgsView kwargs, con
         // kwdefaults override
         for(auto& kv: decl->kwargs){
             if(i >= args.size()) break;
-            buffer[kv.key] = args[i++];
+            buffer[kv.index] = args[i++];
         }
         if(i < args.size()) TypeError(fmt("too many arguments", " (", decl->code->name, ')'));
     }
@@ -846,16 +845,18 @@ void VM::_prepare_py_call(PyObject** buffer, ArgsView args, ArgsView kwargs, con
 
     for(int j=0; j<kwargs.size(); j+=2){
         StrName key(CAST(int, kwargs[j]));
-        int index = co->varnames_inv.try_get_likely_found(key);
-        if(index < 0){
+        int index = decl->kw_to_index.try_get_likely_found(key);
+        // if key is an explicit key, set as local variable
+        if(index >= 0){
+            buffer[index] = kwargs[j+1];
+        }else{
+            // otherwise, set as **kwargs if possible
             if(vkwargs == nullptr){
                 TypeError(fmt(key.escape(), " is an invalid keyword argument for ", co->name, "()"));
             }else{
                 Dict& dict = _CAST(Dict&, vkwargs);
                 dict.set(VAR(key.sv()), kwargs[j+1]);
             }
-        }else{
-            buffer[index] = kwargs[j+1];
         }
     }
 }

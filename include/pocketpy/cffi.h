@@ -9,7 +9,7 @@ namespace pkpy {
 #define PY_CLASS(T, mod, name)                  \
     static Type _type(VM* vm) {                 \
         PK_LOCAL_STATIC const std::pair<StrName, StrName> _path(#mod, #name); \
-        return PK_OBJ_GET(Type, vm->_modules[_path.first]->attr()[_path.second]); \
+        return PK_OBJ_GET(Type, vm->_modules[_path.first]->attr(_path.second)); \
     }                                                                       \
     static void _check_type(VM* vm, PyObject* val){                         \
         if(!vm->isinstance(val, T::_type(vm))){                             \
@@ -22,6 +22,7 @@ namespace pkpy {
             throw std::runtime_error(msg.str());                            \
         }                                                                   \
         PyObject* type = vm->new_type_object(mod, #name, base);             \
+        mod->attr().set(#name, type);                                       \
         T::_register(vm, mod, type);                                        \
         return type;                                                        \
     }                                                                       

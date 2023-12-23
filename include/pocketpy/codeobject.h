@@ -123,12 +123,13 @@ struct CodeObject {
 
 struct FuncDecl {
     struct KwArg {
-        int key;                // index in co->varnames
+        int index;              // index in co->varnames
+        StrName key;            // name of this argument
         PyObject* value;        // default value
     };
     CodeObject_ code;           // code object of this function
-    pod_vector<int> args;       // indices in co->varnames
-    pod_vector<KwArg> kwargs;   // indices in co->varnames
+    std::vector<int> args;      // indices in co->varnames
+    std::vector<KwArg> kwargs;  // indices in co->varnames
     int starred_arg = -1;       // index in co->varnames, -1 if no *arg
     int starred_kwarg = -1;     // index in co->varnames, -1 if no **kwarg
     bool nested = false;        // whether this function is nested
@@ -136,6 +137,14 @@ struct FuncDecl {
     Str signature;              // signature of this function
     Str docstring;              // docstring of this function
     bool is_simple;
+
+    NameDictInt kw_to_index;
+
+    void add_kwarg(int index, StrName key, PyObject* value){
+        kw_to_index.set(key, index);
+        kwargs.push_back({index, key, value});
+    }
+    
     void _gc_mark() const;
 };
 
