@@ -105,6 +105,9 @@ struct FrameId{
 };
 
 typedef void(*PrintFunc)(const char*, int);
+typedef unsigned char* (*ImportHandlerFunc)(VM*, const char*, int, int*);
+
+class IOHandler;
 
 class VM {
     PK_ALWAYS_PASS_BY_POINTER(VM)
@@ -145,7 +148,8 @@ public:
 
     PrintFunc _stdout;
     PrintFunc _stderr;
-    unsigned char* (*_import_handler)(const char*, int, int*);
+    ImportHandlerFunc _import_handler;
+    IOHandler* _io_handler;
 
     // for quick access
     Type tp_object, tp_type, tp_int, tp_float, tp_bool, tp_str;

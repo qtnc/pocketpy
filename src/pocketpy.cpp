@@ -572,10 +572,24 @@ void init_builtins(VM* _vm) {
         return VAR(index);
     });
 
+    _vm->bind_method<1>("str", "rindex", [](VM* vm, ArgsView args) {
+        const Str& self = _CAST(Str&, args[0]);
+        const Str& sub = CAST(Str&, args[1]);
+        int index = self.rindex(sub);
+        if(index == -1) vm->ValueError("substring not found");
+        return VAR(index);
+    });
+
     _vm->bind_method<1>("str", "find", [](VM* vm, ArgsView args) {
         const Str& self = _CAST(Str&, args[0]);
         const Str& sub = CAST(Str&, args[1]);
         return VAR(self.index(sub));
+    });
+
+    _vm->bind_method<1>("str", "rfind", [](VM* vm, ArgsView args) {
+        const Str& self = _CAST(Str&, args[0]);
+        const Str& sub = CAST(Str&, args[1]);
+        return VAR(self.rindex(sub));
     });
 
     _vm->bind_method<1>("str", "startswith", [](VM* vm, ArgsView args) {
@@ -1697,6 +1711,7 @@ void VM::post_init(){
     if(enable_os){
         add_module_io(this);
         add_module_os(this);
+        _io_handler = _default_io_handler;
         _import_handler = _default_import_handler;
     }
 

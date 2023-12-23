@@ -5,8 +5,6 @@ SRCS=$(wildcard src/*.cpp)
 EXE_SRCS=$(wildcard src2/*.cpp)
 PY_SRCS=$(wildcard python/*.py)
 
-DEFINES += PK_ENABLE_OS=0
-
 ifeq ($(OS),Windows_NT)
 EXT_EXE=.exe
 EXT_LIB=.a

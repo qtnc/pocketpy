@@ -1,5 +1,7 @@
 #include "pocketpy/io.h"
 #include "pocketpy/common.h"
+#include<dirent.h>
+#include<cstdio>
 
 namespace pkpy{
 
@@ -23,20 +25,20 @@ static size_t io_fread(void* buffer, size_t size, size_t count, FILE* fp){
 }
 
 
-unsigned char* _default_import_handler(const char* name_p, int name_size, int* out_size){
+unsigned char* _default_import_handler(VM* vm, const char* name_p, int name_size, int* out_size){
 #if PK_ENABLE_OS
     std::string name(name_p, name_size);
-    bool exists = std::filesystem::exists(std::filesystem::path(name));
+    bool exists = vm->_io_handler->exists(name);
     if(!exists) return nullptr;
-    FILE* fp = io_fopen(name.c_str(), "rb");
+    void* fp = vm->_io_handler->open(name, "rb");
     if(!fp) return nullptr;
-    fseek(fp, 0, SEEK_END);
-    int buffer_size = ftell(fp);
+    vm->_io_handler->seek(fp, 0, SEEK_END);
+    int buffer_size = vm->_io_handler->tell(fp);
     unsigned char* buffer = new unsigned char[buffer_size];
-    fseek(fp, 0, SEEK_SET);
-    size_t sz = io_fread(buffer, 1, buffer_size, fp);
+    vm->_io_handler->seek(fp, 0, SEEK_SET);
+    size_t sz = vm->_io_handler->read(buffer, 1, buffer_size, fp);
     PK_UNUSED(sz);
-    fclose(fp);
+    vm->_io_handler->close(fp);
     *out_size = buffer_size;
     return buffer;
 #else
@@ -44,6 +46,75 @@ unsigned char* _default_import_handler(const char* name_p, int name_size, int* o
 #endif
 };
 
+struct DefaultIOHandler: IOHandler {
+#if PK_ENABLE_OS
+bool exists (const std::string& name) override {
+return isfile(name) || isdir(name);
+}
+bool isfile (const std::string& name) override {
+auto fp = io_fopen(name.c_str(), "rb");
+if (fp) fclose(fp);
+return !!fp;
+}
+bool isdir (const std::string& name) override {
+auto dp = opendir(name.c_str());
+if (dp) closedir(dp);
+return !!dp;
+}
+void* open (const std::string& name, const std::string& mode) override {
+return io_fopen(name.c_str(), mode.c_str());
+}
+void seek (void* fp, int n, int a) override {
+if (fp) fseek((FILE*)fp, n, a);
+}
+int tell (void* fp) override {
+return fp? ftell((FILE*)fp) : -1;
+}
+std::size_t read (void* buffer, int size, int count, void* fp) override {
+return fp? io_fread(buffer, size, count, (FILE*)fp) : -1;
+}
+std::size_t write (const void* buffer, int size, int count, void* fp) override {
+return fp? fwrite(buffer, size, count, (FILE*)fp) : -1;
+}
+void close (void* fp) override {
+if (fp) fclose((FILE*)fp);
+}
+void listdir (const std::string& path, VM* vm, List& list) override {
+auto dp = opendir(path.c_str());
+if (!dp) return;
+while(auto d = readdir(dp)) {
+std::string name = d->d_name;
+if (name.empty() || name=="." || name=="..") continue;
+list.push_back(VAR(name));
+}
+closedir(dp);
+}
+bool remove (const std::string& name) override {
+return ::remove(name.c_str());
+}
+bool mkdir (const std::string& name) override {
+return ::mkdir(name.c_str());
+}
+bool rmdir (const std::string& name) override {	
+return ::rmdir(name.c_str());
+}
+#else
+bool exists (const std::string& name) override { return false; }
+void* open (const std::string& name, const std::string& mode) override { return nullptr; }
+void seek (void* fp, int n, int a) override { }
+int tell (void* fp) override { return -1; }
+std::size_t read (void* buffer, int size, int count, void* fp) override { return -1; }
+std::size_t write (const void* buffer, int size, int count, void* fp) override { return -1; }
+void close (void* fp) override { }
+void listdir (const std::string& path, VM* vm, List& list) override {}
+bool remove (const std::string& name) override { return false; }
+bool mkdir (const std::string& name) override { return false; }
+bool rmdir (const std::string& path) override { return false; }
+#endif
+}; // DefaultIOHandler
+
+static DefaultIOHandler _default_io_handler_1;
+IOHandler* _default_io_handler = &_default_io_handler_1;
 
 #if PK_ENABLE_OS
     void FileIO::_register(VM* vm, PyObject* mod, PyObject* type){
@@ -55,11 +126,11 @@ unsigned char* _default_import_handler(const char* name_p, int name_size, int* o
 
         vm->bind_method<0>(type, "read", [](VM* vm, ArgsView args){
             FileIO& io = CAST(FileIO&, args[0]);
-            fseek(io.fp, 0, SEEK_END);
-            int buffer_size = ftell(io.fp);
+            vm->_io_handler->seek(io.fp, 0, SEEK_END);
+            int buffer_size = vm->_io_handler->tell(io.fp);
             unsigned char* buffer = new unsigned char[buffer_size];
-            fseek(io.fp, 0, SEEK_SET);
-            size_t actual_size = io_fread(buffer, 1, buffer_size, io.fp);
+            vm->_io_handler->seek(io.fp, 0, SEEK_SET);
+            size_t actual_size = vm->_io_handler->read(buffer, 1, buffer_size, io.fp);
             PK_ASSERT(actual_size <= buffer_size);
             // in text mode, CR may be dropped, which may cause `actual_size < buffer_size`
             Bytes b(buffer, actual_size);
@@ -71,23 +142,23 @@ unsigned char* _default_import_handler(const char* name_p, int name_size, int* o
             FileIO& io = CAST(FileIO&, args[0]);
             if(io.is_text()){
                 Str& s = CAST(Str&, args[1]);
-                fwrite(s.data, 1, s.length(), io.fp);
+                vm->_io_handler->write(s.data, 1, s.length(), io.fp);
             }else{
                 Bytes& buffer = CAST(Bytes&, args[1]);
-                fwrite(buffer.data(), 1, buffer.size(), io.fp);
+                vm->_io_handler->write(buffer.data(), 1, buffer.size(), io.fp);
             }
             return vm->None;
         });
 
         vm->bind_method<0>(type, "close", [](VM* vm, ArgsView args){
             FileIO& io = CAST(FileIO&, args[0]);
-            io.close();
+            io.close(vm);
             return vm->None;
         });
 
         vm->bind_method<0>(type, "__exit__", [](VM* vm, ArgsView args){
             FileIO& io = CAST(FileIO&, args[0]);
-            io.close();
+            io.close(vm);
             return vm->None;
         });
 
@@ -95,13 +166,13 @@ unsigned char* _default_import_handler(const char* name_p, int name_size, int* o
     }
 
     FileIO::FileIO(VM* vm, std::string file, std::string mode): file(file), mode(mode) {
-        fp = io_fopen(file.c_str(), mode.c_str());
+        fp = vm->_io_handler->open(file, mode);
         if(!fp) vm->IOError(strerror(errno));
     }
 
-    void FileIO::close(){
+    void FileIO::close(VM* vm){
         if(fp == nullptr) return;
-        fclose(fp);
+        vm->_io_handler->close(fp);
         fp = nullptr;
     }
 
@@ -124,82 +195,63 @@ void add_module_os(VM* vm){
     PyObject* mod = vm->new_module("os");
     PyObject* path_obj = vm->heap.gcnew<DummyInstance>(vm->tp_object);
     mod->attr().set("path", path_obj);
-    
-    // Working directory is shared by all VMs!!
-    vm->bind_func<0>(mod, "getcwd", [](VM* vm, ArgsView args){
-        return VAR(std::filesystem::current_path().string());
-    });
-
-    vm->bind_func<1>(mod, "chdir", [](VM* vm, ArgsView args){
-        std::filesystem::path path(CAST(Str&, args[0]).sv());
-        std::filesystem::current_path(path);
-        return vm->None;
-    });
-
-#if PK_SYS_PLATFORM != 2
-    // system
-    vm->bind_func<1>(mod, "system", [](VM* vm, ArgsView args){
-        std::string cmd = CAST(Str&, args[0]).str();
-        int ret = system(cmd.c_str());
-        return VAR(ret);
-    });
-#endif
 
     vm->bind_func<1>(mod, "listdir", [](VM* vm, ArgsView args){
-        std::filesystem::path path(CAST(Str&, args[0]).sv());
-        std::filesystem::directory_iterator di;
+std::string path = CAST(Str&, args[0]).str();
         try{
-            di = std::filesystem::directory_iterator(path);
-        }catch(std::filesystem::filesystem_error& e){
+        List ret;
+vm->_io_handler->listdir(path, vm, ret);
+        return VAR(ret);
+        }catch(std::exception& e){
             std::string msg = e.what();
             auto pos = msg.find_last_of(":");
             if(pos != std::string::npos) msg = msg.substr(pos + 1);
             vm->IOError(Str(msg).lstrip());
         }
-        List ret;
-        for(auto& p: di) ret.push_back(VAR(p.path().filename().string()));
-        return VAR(ret);
+return vm->None;
     });
 
     vm->bind_func<1>(mod, "remove", [](VM* vm, ArgsView args){
-        std::filesystem::path path(CAST(Str&, args[0]).sv());
-        bool ok = std::filesystem::remove(path);
+std::string path = CAST(Str&, args[0]).str();
+        bool ok = vm->_io_handler->remove(path);
         if(!ok) vm->IOError("operation failed");
         return vm->None;
     });
 
     vm->bind_func<1>(mod, "mkdir", [](VM* vm, ArgsView args){
-        std::filesystem::path path(CAST(Str&, args[0]).sv());
-        bool ok = std::filesystem::create_directory(path);
+std::string path = CAST(Str&, args[0]).str();
+        bool ok = vm->_io_handler->mkdir(path);
         if(!ok) vm->IOError("operation failed");
         return vm->None;
     });
 
     vm->bind_func<1>(mod, "rmdir", [](VM* vm, ArgsView args){
-        std::filesystem::path path(CAST(Str&, args[0]).sv());
-        bool ok = std::filesystem::remove(path);
+std::string path = CAST(Str&, args[0]).str();
+        bool ok = vm->_io_handler->rmdir(path);
         if(!ok) vm->IOError("operation failed");
         return vm->None;
     });
 
-    vm->bind_func<-1>(path_obj, "join", [](VM* vm, ArgsView args){
-        std::filesystem::path path;
-        for(int i=0; i<args.size(); i++){
-            path /= CAST(Str&, args[i]).sv();
-        }
-        return VAR(path.string());
-    });
-
     vm->bind_func<1>(path_obj, "exists", [](VM* vm, ArgsView args){
-        std::filesystem::path path(CAST(Str&, args[0]).sv());
-        bool exists = std::filesystem::exists(path);
+std::string path = CAST(Str&, args[0]).str();
+        bool exists = vm->_io_handler->exists(path);
         return VAR(exists);
     });
 
-    vm->bind_func<1>(path_obj, "basename", [](VM* vm, ArgsView args){
-        std::filesystem::path path(CAST(Str&, args[0]).sv());
-        return VAR(path.filename().string());
+    vm->bind_func<1>(path_obj, "isfile", [](VM* vm, ArgsView args){
+std::string path = CAST(Str&, args[0]).str();
+        bool re = vm->_io_handler->isfile(path);
+        return VAR(re);
     });
+
+    vm->bind_func<1>(path_obj, "isdir", [](VM* vm, ArgsView args){
+std::string path = CAST(Str&, args[0]).str();
+        bool re = vm->_io_handler->isdir(path);
+        return VAR(re);
+    });
+
+        CodeObject_ code = vm->compile(kPythonLibs["os"], "os.py", EXEC_MODE);
+        vm->_exec(code, mod);
 #endif
 }
 

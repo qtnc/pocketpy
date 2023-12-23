@@ -89,10 +89,6 @@ int main(int argc, char** argv){
         std::string argv_1 = argv[1];
         if(argv_1 == "-h" || argv_1 == "--help") goto __HELP;
 
-//        if(!std::filesystem::exists(filepath)){
-//            std::cerr << "File not found: " << argv_1 << std::endl;
-//            return 2;
-//        }        
         std::ifstream file(argv[1]);
         if(!file.is_open()){
             std::cerr << "Failed to open file: " << argv_1 << std::endl;
@@ -100,9 +96,6 @@ int main(int argc, char** argv){
         }
         std::string src((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         file.close();
-
-        // set parent path as cwd
-//        std::filesystem::current_path(filepath.parent_path());
 
         bool ok = pkpy_exec_2(vm, src.c_str(), argv[1], 0, NULL);
         if(!ok) pkpy_clear_error(vm, NULL);
