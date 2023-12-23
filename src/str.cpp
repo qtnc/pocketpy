@@ -279,6 +279,12 @@ int utf8len(unsigned char c, bool suppress){
         return p - data;
     }
 
+    int Str::rindex(const Str& sub, int start) const {
+        auto p = std::find_end(data + start, data + size, sub.data, sub.data + sub.size);
+        if(p == data + size) return -1;
+        return p - data;
+    }
+
     Str Str::replace(char old, char new_) const{
         Str copied = *this;
         for(int i=0; i<copied.size; i++){
