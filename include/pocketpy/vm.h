@@ -484,13 +484,6 @@ public:
     PyObject* bind(PyObject*, const char*, const char*, NativeFuncC, UserData userdata={});
     PyObject* bind(PyObject*, const char*, NativeFuncC, UserData userdata={});
     PyObject* bind_property(PyObject*, Str, NativeFuncC fget, NativeFuncC fset=nullptr, UserData fgudata ={}, UserData fsudata ={});
-// QC simpler binding API
-template<typename Ret, typename... Params> void bindf (PyObject* obj, const char* sig, Ret(*func)(Params...), const char* doc = nullptr);
-template<typename Ret, typename T, typename... Params> void bindf (PyObject* obj, const char* sig, Ret(T::*func)(Params...), const char* doc = nullptr);
-template<class T> void bindp (PyObject* obj, const char* name, T* prop);
-template<class T, class P> void bindp (PyObject* obj, const char* name, P T::*prop);
-template<class T> inline void bindcp (PyObject* obj, const char* name, const T& prop);
-template<class T, class... A> inline void bindc (PyObject* obj, const char* sig);
 };
 
 DEF_NATIVE_2(Str, tp_str)

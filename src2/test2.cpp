@@ -1,5 +1,6 @@
 #include<iostream>
     #include "pocketpy.h"
+#include "pocketpy/binding2.h"
 using namespace pkpy;
 
 struct Point {
@@ -26,17 +27,16 @@ x+=p.x; y+=p.y;
 return *this;
 }
 
-PY_CLASS(Point, builtins, Point)
-    static void _register(VM* vm, PyObject* mod, PyObject* type) {
-vm->bindcp(type, "half", 0.5);
-vm->bindc<Point, double, double>(type, "__new__ (cls, x=0, y=0)");
-vm->bindp(type, "x", &Point::x);
-vm->bindp(type, "y", &Point::y);
-vm->bindf(type, "__repr__(self)", &repr);
-vm->bindf(type, "__len__(self)", &length);
-vm->bindf(type, "__add__(self,other)", &operator+);
-vm->bindf(type, "append(self,other)", &operator+=);
-//vm->bindf(type, "print(self,s)", &print);
+PY_REG(Point, builtins, Point) {
+binder.bind("half", 0.5);
+binder.bindConstructor<Point, double, double>("__new__ (cls, x=0, y=0)");
+binder.bind("x", &Point::x);
+binder.bind("y", &Point::y);
+binder.bind("__len__(self)", &length);
+binder.bind("__repr__(self)", &repr);
+binder.bind("__add__(self,other)", &operator+);
+binder.bind("append(self,other)", &operator+=);
+//binder.bind("print(self,s)", &print);
 }
 
 };//Point

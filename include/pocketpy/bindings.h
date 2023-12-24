@@ -57,20 +57,6 @@ struct NativeProxyMethodC final: NativeProxyFuncCBase {
     }
 };
 
-template<class T, class... A>
-struct CtorBinder { 
-template<std::size_t... I>
-static PyObject* call (VM* vm,  ArgsView args, std::index_sequence<I...> seq) {
-return vm->heap.gcnew<T>(T::_type(vm), py_cast<typename std::tuple_element<I, std::tuple<A...>>::type>(vm, args[I+1])... );
-}
-static inline void bind (VM* vm, PyObject* type, const char* name) {
-vm->bind(type, name, [](VM* vm, ArgsView args){
-typedef std::make_index_sequence<sizeof...(A)> seq;
-return call(vm, args, seq());
-});
-}
-};//end
-
 inline PyObject* proxy_wrapper(VM* vm, ArgsView args){
     NativeProxyFuncCBase* pf = lambda_get_userdata<NativeProxyFuncCBase*>(args.begin());
     return (*pf)(vm, args);
@@ -86,61 +72,6 @@ template<typename Ret, typename T, typename... Params>
 void _bind(VM* vm, PyObject* obj, const char* sig, Ret(T::*func)(Params...)){
     auto proxy = new NativeProxyMethodC<Ret, T, Params...>(func);
     vm->bind(obj, sig, proxy_wrapper, proxy);
-}
-
-template<typename Ret, typename... Params>
-void VM::bindf (PyObject* obj, const char* sig, Ret(*func)(Params...), const char* doc){
-    auto proxy = new NativeProxyFuncC<Ret, Params...>(func);
-    this->bind(obj, sig, doc, proxy_wrapper, proxy);
-}
-
-template<typename Ret, typename T, typename... Params>
-void VM::bindf (PyObject* obj, const char* sig, Ret(T::*func)(Params...), const char* doc){
-    auto proxy = new NativeProxyMethodC<Ret, T, Params...>(func);
-    this->bind(obj, sig, doc, proxy_wrapper, proxy);
-}
-
-template<class T, class... A>
-inline void VM::bindc (PyObject* obj, const char* sig) {
-CtorBinder<T, A...>::bind(this, obj, sig);
-}
-
-template<class T>
-void VM::bindp (PyObject* obj, const char* name, T* prop) {
-this->bind_property(obj, name,
-[](VM* vm, ArgsView args){
-T* prop = lambda_get_userdata<T*>(args.begin());
-return py_var(vm, *prop);
-},
-[](VM* vm, ArgsView args){
-T* prop = lambda_get_userdata<T*>(args.begin());
-*prop = py_cast<T>(vm, args[1]);
-return vm->None;
-},
-prop, prop);
-}
-
-template<class T, class P>
-void VM::bindp (PyObject* obj, const char* name, P T::*prop) {
-typedef P T::*Prop;
-this->bind_property(obj, name,
-[](VM* vm, ArgsView args){
-Prop prop = lambda_get_userdata<Prop>(args.begin());
-T& self = _py_cast<T&>(vm, args[0]);
-return py_var(vm, self.*prop);
-},
-[](VM* vm, ArgsView args){
-Prop prop = lambda_get_userdata<Prop>(args.begin());
-T& self = _py_cast<T&>(vm, args[0]);
-self.*prop = py_cast<P>(vm, args[1]);
-return vm->None;
-},
-prop, prop);
-}
-
-template <class T>
-inline void VM::bindcp (PyObject* obj, const char* name, const T& val) {
-    obj->attr().set(name, VAR(val));
 }
 
 /*****************************************************************/
