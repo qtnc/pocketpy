@@ -1,5 +1,4 @@
 import sys as _sys
-import operator as _operator
 
 def print(*args, sep=' ', end='\n'):
     s = sep.join([str(i) for i in args])
@@ -16,42 +15,41 @@ def issubclass(cls, base):
         cls = cls.__base__
     return False
 
-def _minmax_reduce(op, args, key):
-    if key is None: 
-        if len(args) == 2:
-            return args[0] if op(args[0], args[1]) else args[1]
-        key = lambda x: x
+def reduce(func, *args, default=None):
     if len(args) == 0:
         raise TypeError('expected 1 arguments, got 0')
     if len(args) == 1:
         args = args[0]
     args = iter(args)
-    res = next(args)
+    res = next(args) if default is None else default
     if res is StopIteration:
         raise ValueError('args is an empty sequence')
     while True:
         i = next(args)
         if i is StopIteration:
             break
-        if op(key(i), key(res)):
-            res = i
+        res = func(i, res)
     return res
 
-def min(*args, key=None):
-    return _minmax_reduce(_operator.lt, args, key)
+def min(*args, key=None, default=None):
+    if key is None: key = lambda x: x
+    return reduce(lambda a, b: a if key(a)<key(b) else b, *args, default=default)
 
-def max(*args, key=None):
-    return _minmax_reduce(_operator.gt, args, key)
+def max(*args, key=None, default=None):
+    if key is None: key = lambda x: x
+    return reduce(lambda a, b: a if key(a)>key(b) else b, *args, default=default)
 
-def all(iterable):
+def all(iterable, func=None):
+    if func is None: func = lambda x: x
     for i in iterable:
-        if not i:
+        if not func(i):
             return False
     return True
 
-def any(iterable):
+def any(iterable, func=None):
+    if func is None: func = lambda x: x
     for i in iterable:
-        if i:
+        if func(i):
             return True
     return False
 
@@ -76,15 +74,15 @@ def filter(f, iterable):
         if f(i):
             yield i
 
-def zip(a, b):
-    a = iter(a)
-    b = iter(b)
+def zip(*args):
+    argc = len(args)
+    its = [iter(x) for x in args]
     while True:
-        ai = next(a)
-        bi = next(b)
-        if ai is StopIteration or bi is StopIteration:
-            break
-        yield ai, bi
+        l = [next(x) for x in its]
+        c = 0
+        for x in l: ++c
+        if c<argc: break
+        yield l
 
 def reversed(iterable):
     a = list(iterable)
