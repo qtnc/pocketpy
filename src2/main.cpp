@@ -60,12 +60,14 @@ static int f_input(pkpy_vm* vm){
     return 1;
 }
 
+void regpt (void*);
 int main(int argc, char** argv){
 #if _WIN32
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
 #endif
     pkpy_vm* vm = pkpy_new_vm(true);
+regpt(vm);
 
     pkpy_push_function(vm, "input(prompt=None) -> str", f_input);
     pkpy_eval(vm, "__import__('builtins')");

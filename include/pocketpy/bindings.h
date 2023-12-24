@@ -57,6 +57,20 @@ struct NativeProxyMethodC final: NativeProxyFuncCBase {
     }
 };
 
+template<class T, class... A>
+struct CtorBinder { 
+template<std::size_t... I>
+static PyObject* call (VM* vm,  ArgsView args, std::index_sequence<I...> seq) {
+return vm->heap.gcnew<T>(T::_type(vm), py_cast<typename std::tuple_element<I, std::tuple<A...>>::type>(vm, args[I+1])... );
+}
+static inline void bind (VM* vm, PyObject* type, const char* name) {
+vm->bind(type, name, [](VM* vm, ArgsView args){
+typedef std::make_index_sequence<sizeof...(A)> seq;
+return call(vm, args, seq());
+});
+}
+};//end
+
 inline PyObject* proxy_wrapper(VM* vm, ArgsView args){
     NativeProxyFuncCBase* pf = lambda_get_userdata<NativeProxyFuncCBase*>(args.begin());
     return (*pf)(vm, args);
@@ -86,8 +100,28 @@ void VM::bindf (PyObject* obj, const char* sig, Ret(T::*func)(Params...), const 
     this->bind(obj, sig, doc, proxy_wrapper, proxy);
 }
 
+template<class T, class... A>
+inline void VM::bindc (PyObject* obj, const char* sig) {
+CtorBinder<T, A...>::bind(this, obj, sig);
+}
+
+template<class T>
+void VM::bindp (PyObject* obj, const char* name, T* prop) {
+this->bind_property(obj, name,
+[](VM* vm, ArgsView args){
+T* prop = lambda_get_userdata<T*>(args.begin());
+return py_var(vm, *prop);
+},
+[](VM* vm, ArgsView args){
+T* prop = lambda_get_userdata<T*>(args.begin());
+*prop = py_cast<T>(vm, args[1]);
+return vm->None;
+},
+prop, prop);
+}
+
 template<class T, class P>
-void VM::bindf (PyObject* obj, const char* name, P T::*prop) {
+void VM::bindp (PyObject* obj, const char* name, P T::*prop) {
 typedef P T::*Prop;
 this->bind_property(obj, name,
 [](VM* vm, ArgsView args){
@@ -102,6 +136,11 @@ self.*prop = py_cast<P>(vm, args[1]);
 return vm->None;
 },
 prop, prop);
+}
+
+template <class T>
+inline void VM::bindcp (PyObject* obj, const char* name, const T& val) {
+    obj->attr().set(name, VAR(val));
 }
 
 /*****************************************************************/
@@ -211,5 +250,11 @@ prop, prop);
             T* tgt = reinterpret_cast<T*>(self.ptr);                                    \
             tgt[i] = CAST(T, _2);                                                       \
         });                                                                         \
+
+#define PY_CLASS_CONV(ctype)                                      \
+namespace pkpy { \
+    inline PyObject* py_var(VM* vm, const ctype& value) { return vm->heap.gcnew<ctype>(ctype::_type(vm), value);}     \
+    inline PyObject* py_var(VM* vm, ctype&& value) { return vm->heap.gcnew<ctype>(ctype::_type(vm), std::move(value));} \
+} // napespace pkpy
 
 }   // namespace pkpy
