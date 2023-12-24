@@ -84,6 +84,24 @@ inline void bind (const char* name, const T& val) {
 
 }; // Binder
 
+template<> inline const std::string& py_cast<const std::string&> (VM* vm, PyObject* obj) {
+static std::string holder[16];
+static int i = 0;
+std::string& h = holder[++i%16];
+h = py_cast<Str&>(vm, obj) .str();
+return h;
+}
+
+template <class T, class Z = typename std::enable_if<is_py_class<T>::value>::type>
+    inline PyObject* py_var(VM* vm, const T& value) { 
+return vm->heap.gcnew<T>(T::_type(vm), value);
+}  
+
+template <class T, class Z = typename std::enable_if<is_py_class<T>::value>::type>
+    inline PyObject* py_var(VM* vm, T&& value) { 
+return vm->heap.gcnew<T>(T::_type(vm), std::move(value));
+} 
+
 } // namespace pkpy
 
 #define PY_REG(CPPNAME, MODNAME, PYNAME) \

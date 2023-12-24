@@ -36,15 +36,11 @@ binder.bind("__len__(self)", &length);
 binder.bind("__repr__(self)", &repr);
 binder.bind("__add__(self,other)", &operator+);
 binder.bind("append(self,other)", &operator+=);
-//binder.bind("print(self,s)", &print);
+binder.bind("print(self,s)", &print);
 }
 
 };//Point
-PY_CLASS_CONV(Point)
-
-void testz (VM* vm, PyObject* obj) {
-//std::string s = py_cast<std::string>(vm, obj);
-}
+///PY_CLASS_CONV(Point)
 
 void regpt (void* pvm) {
 VM* vm = (VM*)pvm;

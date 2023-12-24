@@ -182,10 +182,4 @@ void _bind(VM* vm, PyObject* obj, const char* sig, Ret(T::*func)(Params...)){
             tgt[i] = CAST(T, _2);                                                       \
         });                                                                         \
 
-#define PY_CLASS_CONV(ctype)                                      \
-namespace pkpy { \
-    inline PyObject* py_var(VM* vm, const ctype& value) { return vm->heap.gcnew<ctype>(ctype::_type(vm), value);}     \
-    inline PyObject* py_var(VM* vm, ctype&& value) { return vm->heap.gcnew<ctype>(ctype::_type(vm), std::move(value));} \
-} // napespace pkpy
-
 }   // namespace pkpy
