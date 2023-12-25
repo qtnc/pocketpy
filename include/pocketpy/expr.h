@@ -241,6 +241,11 @@ struct SetCompExpr: CompExpr{
     Opcode op1() override { return OP_SET_ADD; }
 };
 
+struct GenCompExpr: CompExpr{
+    Opcode op0() override { return OP_NO_OP; }
+    Opcode op1() override { return OP_YIELD_VALUE; }
+};
+
 struct LambdaExpr: Expr{
     FuncDecl_ decl;
 

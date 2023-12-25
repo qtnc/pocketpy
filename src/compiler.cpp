@@ -300,9 +300,34 @@ namespace pkpy{
 
     void Compiler::exprGroup(){
         match_newlines_repl();
+int prev_i = i;
         EXPR_TUPLE();   // () is just for change precedence
         match_newlines_repl();
+            if(!ctx()->s_expr.top()->is_tuple() && match(TK("for"))){
+//####
+ctx()->s_expr.popx();
+        FuncDecl_ decl = push_f_context("<generator>");
+decl->signature = "<generator>";
+decl->is_simple = false;
+decl->code->is_generator = true;
+i = prev_i;
+        EXPR_TUPLE();   // () is just for change precedence
+        match_newlines_repl();
+consume(TK("for"));
+Expr_ loopExpr = std::move(ctx()->s_expr.popx());
+                _consume_comp<GenCompExpr>(std::move(loopExpr));
+Expr_ bodyExpr = std::move(ctx()->s_expr.popx());
+bodyExpr->emit_(ctx());
+        pop_context();
+        auto lambdaExpr = make_expr<LambdaExpr>(decl);
+        auto callExpr = make_expr<CallExpr>();
+callExpr->callable = std::move(lambdaExpr);
+        ctx()->s_expr.push(std::move(callExpr));
         consume(TK(")"));
+return;
+}
+        consume(TK(")"));
+            match_newlines_repl();
         if(ctx()->s_expr.top()->is_tuple()) return;
         Expr_ g = make_expr<GroupedExpr>(ctx()->s_expr.popx());
         ctx()->s_expr.push(std::move(g));
