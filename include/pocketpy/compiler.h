@@ -89,6 +89,7 @@ class Compiler {
     void exprFString();
     void exprLambda();
     void exprTuple();
+    void exprGenComp(int prev_i);
     void exprOr();
     void exprAnd();
     void exprTernary();

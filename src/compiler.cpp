@@ -299,33 +299,15 @@ namespace pkpy{
     }
 
     void Compiler::exprGroup(){
-        match_newlines_repl();
 int prev_i = i;
-        EXPR_TUPLE();   // () is just for change precedence
         match_newlines_repl();
-            if(!ctx()->s_expr.top()->is_tuple() && match(TK("for"))){
-//####
-ctx()->s_expr.popx();
-        FuncDecl_ decl = push_f_context("<generator>");
-decl->signature = "<generator>";
-decl->is_simple = false;
-decl->code->is_generator = true;
-i = prev_i;
         EXPR_TUPLE();   // () is just for change precedence
-        match_newlines_repl();
-consume(TK("for"));
-Expr_ loopExpr = std::move(ctx()->s_expr.popx());
-                _consume_comp<GenCompExpr>(std::move(loopExpr));
-Expr_ bodyExpr = std::move(ctx()->s_expr.popx());
-bodyExpr->emit_(ctx());
-        pop_context();
-        auto lambdaExpr = make_expr<LambdaExpr>(decl);
-        auto callExpr = make_expr<CallExpr>();
-callExpr->callable = std::move(lambdaExpr);
-        ctx()->s_expr.push(std::move(callExpr));
+        if(!ctx()->s_expr.top()->is_tuple() && match(TK("for"))) {
+exprGenComp(prev_i);
         consume(TK(")"));
 return;
 }
+        match_newlines_repl();
         consume(TK(")"));
             match_newlines_repl();
         if(ctx()->s_expr.top()->is_tuple()) return;
@@ -400,6 +382,27 @@ return;
         }
     }
 
+void Compiler::exprGenComp(int prev_i){
+ctx()->s_expr.popx();
+        FuncDecl_ decl = push_f_context("<generator>");
+decl->signature = "<generator>";
+decl->is_simple = false;
+decl->code->is_generator = true;
+i = prev_i;
+        EXPR_TUPLE();   // () is just for change precedence
+        match_newlines_repl();
+consume(TK("for"));
+Expr_ loopExpr = std::move(ctx()->s_expr.popx());
+                _consume_comp<GenCompExpr>(std::move(loopExpr));
+Expr_ bodyExpr = std::move(ctx()->s_expr.popx());
+bodyExpr->emit_(ctx());
+        pop_context();
+        auto lambdaExpr = make_expr<LambdaExpr>(decl);
+        auto callExpr = make_expr<CallExpr>();
+callExpr->callable = std::move(lambdaExpr);
+        ctx()->s_expr.push(std::move(callExpr));
+}
+
     void Compiler::exprCall() {
         auto e = make_expr<CallExpr>();
         e->callable = ctx()->s_expr.popx();
@@ -413,6 +416,7 @@ return;
                 EXPR();
                 e->kwargs.push_back({key, ctx()->s_expr.popx()});
             } else{
+int prev_i = i;
                 EXPR();
                 if(ctx()->s_expr.top()->star_level() == 2){
                     // **kwargs
@@ -420,6 +424,10 @@ return;
                 }else{
                     // positional argument
                     if(!e->kwargs.empty()) SyntaxError("positional argument follows keyword argument");
+if (match(TK("for"))) {
+                    if(!e->args.empty()) SyntaxError("generator expression must be parenthesized if not sole argument");
+exprGenComp(prev_i);
+}
                     e->args.push_back(ctx()->s_expr.popx());
                 }
             }
