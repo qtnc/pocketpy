@@ -345,27 +345,40 @@ namespace pkpy{
         return true;
     }
 
+inline void CompExpr::emit_comp_expr(CodeEmitContext* ctx, int comp_index){
+if (comp_index>=comps.size() ) {
+expr->emit_(ctx);
+            ctx->emit_(op1(), BC_NOARG, BC_KEEPLINE);
+}
+else emit_comp(ctx, comp_index);
+}
+
     void CompExpr::emit_(CodeEmitContext* ctx){
-        ctx->emit_(op0(), 0, line);
-        iter->emit_(ctx);
+auto op = op0();
+if (op!=OP_NO_OP)         ctx->emit_(op, 0, line);
+emit_comp(ctx, 0);
+}
+
+    void CompExpr::emit_comp(CodeEmitContext* ctx, int comp_index){
+auto op = op0();
+Comp& comp = comps[comp_index];
+if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->emit_(OP_DUP_NTH, comp_index+1, BC_KEEPLINE);
+        comp.iter->emit_(ctx);
         ctx->emit_(OP_GET_ITER, BC_NOARG, BC_KEEPLINE);
         ctx->enter_block(FOR_LOOP);
         ctx->emit_(OP_FOR_ITER, BC_NOARG, BC_KEEPLINE);
-        bool ok = vars->emit_store(ctx);
+        bool ok = comp.vars->emit_store(ctx);
         // this error occurs in `vars` instead of this line, but...nevermind
         PK_ASSERT(ok);  // TODO: raise a SyntaxError instead
-        if(cond){
-            cond->emit_(ctx);
+        if(comp.cond){
+            comp.cond->emit_(ctx);
             int patch = ctx->emit_(OP_POP_JUMP_IF_FALSE, BC_NOARG, BC_KEEPLINE);
-            expr->emit_(ctx);
-            ctx->emit_(op1(), BC_NOARG, BC_KEEPLINE);
+            emit_comp_expr(ctx, comp_index+1);
             ctx->patch_jump(patch);
-        }else{
-            expr->emit_(ctx);
-            ctx->emit_(op1(), BC_NOARG, BC_KEEPLINE);
-        }
+        }else emit_comp_expr(ctx, comp_index+1);
         ctx->emit_(OP_LOOP_CONTINUE, ctx->get_loop(), BC_KEEPLINE);
         ctx->exit_block();
+if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->emit_(OP_POP_TOP, BC_NOARG, BC_KEEPLINE);
     }
 
 

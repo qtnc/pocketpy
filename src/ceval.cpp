@@ -112,6 +112,7 @@ __NEXT_STEP:;
         SECOND() = THIRD();
         THIRD() = _0;
     } DISPATCH();
+    TARGET(DUP_NTH) PUSH(PEEK(byte.arg)); DISPATCH();
     TARGET(PRINT_EXPR){
         if(TOP() != None) stdout_write(CAST(Str&, py_repr(TOP())) + "\n");
         POP();

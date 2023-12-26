@@ -70,15 +70,19 @@ class Compiler {
         static_assert(std::is_base_of<CompExpr, T>::value);
         std::unique_ptr<CompExpr> ce = make_expr<T>();
         ce->expr = std::move(expr);
-        ce->vars = EXPR_VARS();
+do {
+CompExpr::Comp comp;
+        comp.vars = EXPR_VARS();
         consume(TK("in"));
         parse_expression(PREC_TERNARY + 1);
-        ce->iter = ctx()->s_expr.popx();
+        comp.iter = ctx()->s_expr.popx();
         match_newlines_repl();
         if(match(TK("if"))){
             parse_expression(PREC_TERNARY + 1);
-            ce->cond = ctx()->s_expr.popx();
+            comp.cond = ctx()->s_expr.popx();
         }
+ce->comps.emplace_back(std::move(comp));
+} while (match(TK("for")));
         ctx()->s_expr.push(std::move(ce));
         match_newlines_repl();
     }

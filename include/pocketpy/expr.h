@@ -216,14 +216,19 @@ struct TupleExpr: SequenceExpr{
 
 struct CompExpr: Expr{
     Expr_ expr;       // loop expr
+struct Comp {
     Expr_ vars;       // loop vars
     Expr_ iter;       // loop iter
     Expr_ cond;       // optional if condition
+};
+std::vector<Comp> comps;
 
     virtual Opcode op0() = 0;
     virtual Opcode op1() = 0;
 
     void emit_(CodeEmitContext* ctx) override;
+    void emit_comp(CodeEmitContext* ctx, int comp_index);
+inline     void emit_comp_expr(CodeEmitContext* ctx, int comp_index);
 };
 
 struct ListCompExpr: CompExpr{
