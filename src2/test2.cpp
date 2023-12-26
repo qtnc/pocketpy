@@ -28,15 +28,17 @@ return *this;
 }
 
 PY_REG(Point, builtins, Point) {
-binder.bind("half", 0.5);
-binder.bindConstructor<Point, double, double>("__new__ (cls, x=0, y=0)");
-binder.bind("x", &Point::x);
-binder.bind("y", &Point::y);
-binder.bind("__len__(self)", &length);
-binder.bind("__repr__(self)", &repr);
-binder.bind("__add__(self,other)", &operator+);
-binder.bind("append(self,other)", &operator+=);
-binder.bind("print(self,s)", &print);
+binder
+.bind("half", 0.5)
+.bindConstructor<Point, double, double>("__new__ (cls, x=0, y=0)")
+.bind("x", &Point::x)
+.bind("y", &Point::y)
+.bind("__len__(self)", &length)
+.bind("__repr__(self)", &repr)
+.bind("__add__(self,other)", &operator+)
+.bind("append(self,other)", &operator+=)
+.bind("print(self,s)", &print)
+;
 }
 
 };//Point
@@ -45,4 +47,13 @@ binder.bind("print(self,s)", &print);
 void regpt (void* pvm) {
 VM* vm = (VM*)pvm;
 Point::register_class(vm, vm->builtins);
+
+Binder(vm, vm->_main)
+.bindf("testf(o)", [](VM* vm, ArgsView args){
+if (int i; try_py_cast(vm, args[0], i)) return py_var(vm, "Int: " + std::to_string(i));
+else if (std::string s; try_py_cast(vm, args[0], s)) return py_var(vm, "String: " +s);
+else if (Point* p; try_py_cast(vm, args[0], p)) return py_var(vm, p->repr());
+else return py_var(vm, "Something else");
+});
+
 }
