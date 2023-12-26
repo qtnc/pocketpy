@@ -50,6 +50,9 @@ struct NativeProxyMethodC final: NativeProxyFuncCBase {
         if constexpr(std::is_void_v<__Ret>){
             (self.*func)(py_cast<Params>(vm, args[Is+1])...);
             return vm->None;
+        }else if constexpr (std::is_same<T&, __Ret>::value) {
+            __Ret ret = (self.*func)(py_cast<Params>(vm, args[Is+1])...);
+            return &ret==&self? args[0] : VAR(std::move(ret));
         }else{
             __Ret ret = (self.*func)(py_cast<Params>(vm, args[Is+1])...);
             return VAR(std::move(ret));
