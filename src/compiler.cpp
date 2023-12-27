@@ -301,13 +301,15 @@ namespace pkpy{
     void Compiler::exprGroup(){
 int prev_i = i;
         match_newlines_repl();
-        EXPR_TUPLE();   // () is just for change precedence
-        if(!ctx()->s_expr.top()->is_tuple() && match(TK("for"))) {
+        EXPR();
+        match_newlines_repl();
+        if(match(TK("for"))) {
 exprGenComp(prev_i);
+        match_newlines_repl();
         consume(TK(")"));
 return;
 }
-        match_newlines_repl();
+else if (match(TK(","))) exprTuple();
         consume(TK(")"));
             match_newlines_repl();
         if(ctx()->s_expr.top()->is_tuple()) return;
