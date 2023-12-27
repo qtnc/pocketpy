@@ -211,11 +211,18 @@ template <typename T> struct is_py_class<T, std::void_t<decltype(T::_type)>> : s
 
 template<typename T> T to_void_p(VM*, PyObject*);
 
+inline bool is_none (VM* vm, PyObject* obj);
+
 template<typename __T>
 __T py_cast(VM* vm, PyObject* obj) {
     using T = std::decay_t<__T>;
     if constexpr(std::is_enum_v<T>){
         return (__T)py_cast<i64>(vm, obj);
+    }else if constexpr(std::is_pointer_v<T> && is_py_class<typename std::remove_pointer<T>::type>::value){
+using TNP = typename std::remove_pointer<T>::type;
+if (is_none(vm, obj)) return nullptr;
+        TNP::_check_type(vm, obj);
+        return &PK_OBJ_GET(TNP, obj);
     }else if constexpr(std::is_pointer_v<T>){
         return to_void_p<T>(vm, obj);
     }else if constexpr(is_py_class<T>::value){

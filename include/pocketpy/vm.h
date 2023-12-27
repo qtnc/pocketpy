@@ -671,4 +671,8 @@ PyObject* PyArrayGetItem(VM* vm, PyObject* obj, PyObject* index){
     return self[i];
 }
 
+inline bool is_none (VM* vm, PyObject* obj) {
+return obj==vm->None;
+}
+
 }   // namespace pkpy
