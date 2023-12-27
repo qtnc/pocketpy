@@ -8,6 +8,8 @@
 #include "cJSONw.hpp"
 #endif
 
+#include<thread>
+
 namespace pkpy{
 
 void init_builtins(VM* _vm) {
@@ -1403,12 +1405,7 @@ void add_module_time(VM* vm){
 
     vm->bind_func<1>(mod, "sleep", [](VM* vm, ArgsView args) {
         f64 seconds = CAST_F(args[0]);
-        auto begin = std::chrono::system_clock::now();
-        while(true){
-            auto now = std::chrono::system_clock::now();
-            f64 elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - begin).count() / 1000.0;
-            if(elapsed >= seconds) break;
-        }
+std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(seconds * 1000.0)));
         return vm->None;
     });
 
