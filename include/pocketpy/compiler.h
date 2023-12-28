@@ -24,14 +24,14 @@ class Compiler {
     bool unknown_global_scope;     // for eval/exec() call
     bool used;
     // for parsing token stream
-    int i = 0;
+    std::size_t i = 0;
     std::vector<Token> tokens;
 
     const Token& prev() const{ return tokens.at(i-1); }
     const Token& curr() const{ return tokens.at(i); }
     const Token& next() const{ return tokens.at(i+1); }
     const Token& err() const{
-        if(i >= tokens.size()) return prev();
+        if(i >= static_cast<int>(tokens.size())) return prev();
         return curr();
     }
     void advance(int delta=1) { i += delta; }

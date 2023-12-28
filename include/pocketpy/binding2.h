@@ -41,19 +41,19 @@ inline Binder& bind (const char* sig, Ret(T::*func)(Params...), const char* doc 
 return *this;
 }
 
-inline Binder& bindf (const char* sig, NativeFuncC func, const char* doc = nullptr) {
+inline Binder& bindFunc (const char* sig, NativeFuncC func, const char* doc = nullptr) {
 vm->bind(obj, sig, doc, func);
 return *this;
 }
 
 template<class T, class... Params>
-inline Binder& bindConstructor (const char* sig) {
+inline Binder& bindCtor (const char* sig) {
 CtorBinder<T, Params...>::bind(vm, obj, sig);
 return *this;
 }
 
 template<class T>
-Binder& bind (const char* name, T* prop) {
+Binder& bindProp (const char* name, T* prop) {
 vm->bind_property(obj, name,
 [](VM* vm, ArgsView args){
 T* prop = lambda_get_userdata<T*>(args.begin());
@@ -69,7 +69,7 @@ return *this;
 }
 
 template<class T, class P>
-Binder& bind (const char* name, P T::*prop) {
+Binder& bindProp (const char* name, P T::*prop) {
 typedef P T::*Prop;
 vm->bind_property(obj, name,
 [](VM* vm, ArgsView args){
@@ -87,9 +87,35 @@ prop, prop);
 return *this;
 }
 
+template<class T, class GP, class SP, class SR>
+Binder& bindProp (const char* name, GP(T::*getter)(), SR(T::*setter)(SP) = nullptr) {
+    auto proxyGetter = getter? new NativeProxyMethodC<GP, T>(getter) :nullptr;
+    auto proxySetter = setter? new NativeProxyMethodC<SR, T, SP>(setter) :nullptr;
+vm->bind_property(obj, name, getter?proxy_wrapper:nullptr, setter?proxy_wrapper:nullptr, proxyGetter, proxySetter);
+return *this;
+}
+
+template<class GP, class SP, class SR>
+Binder& bindProp (const char* name, GP(*getter)(), SR(*setter)(SP) = nullptr) {
+    auto proxyGetter = getter? new NativeProxyFuncC<GP>(getter) :nullptr;
+    auto proxySetter = setter? new NativeProxyFuncC<SR, SP>(setter) :nullptr;
+vm->bind_property(obj, name, getter?proxy_wrapper:nullptr, setter?proxy_wrapper:nullptr, proxyGetter, proxySetter);
+return *this;
+}
+
+Binder& bindPropFunc (const char* name, NativeFuncC  getter, NativeFuncC  setter = nullptr) {
+vm->bind_property(obj, name, getter, setter);
+return *this;
+}
+
 template <class T>
-inline Binder& bind (const char* name, const T& val) {
+inline Binder& bindValue (const char* name, const T& val) {
     obj->attr().set(name, VAR(val));
+return *this;
+}
+
+Binder& bindValue (const char* name, PyObject* val) {
+    obj->attr().set(name, val);
 return *this;
 }
 
@@ -132,6 +158,7 @@ TP(List, tp_list)
 TP(Dict, tp_dict)
 TP(Tuple, tp_tuple)
 TP(Bytes, tp_bytes)
+TP(Slice, tp_slice)
 #undef TP
 else return false;
 }
@@ -150,12 +177,21 @@ re = &py_cast<T&>(vm, obj);
 return true;
 }
 
+inline PyObject* py_create_dummy (VM* vm) {
+return vm->heap.gcnew<DummyInstance>(vm->tp_object);
+}
+
+template<class T, class... A>
+inline PyObject* py_create (VM* vm, A&&... args) {
+return vm->heap.gcnew<T>(T::_type(vm), std::forward<A>(args)...);
+}
+
 } // namespace pkpy
 
 #define PY_REG(CPPNAME, MODNAME, PYNAME) \
 PY_CLASS(CPPNAME, MODNAME, PYNAME) \
-    static inline void _register (pkpy::VM* vm, pkpy::PyObject* mod, pkpy::PyObject* type) { _register2(Binder(vm, mod, type)); } \
-    static void _register2 (Binder binder)
+    static inline void _register (pkpy::VM* vm, pkpy::PyObject* mod, pkpy::PyObject* type) { _register(Binder(vm, mod, type)); } \
+    static void _register (Binder binder)
 
 
 
