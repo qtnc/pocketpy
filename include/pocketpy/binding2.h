@@ -53,7 +53,7 @@ return *this;
 }
 
 template<class T>
-Binder& bindProp (const char* name, T* prop) {
+Binder& bindStaticProp (const char* name, T* prop) {
 vm->bind_property(obj, name,
 [](VM* vm, ArgsView args){
 T* prop = lambda_get_userdata<T*>(args.begin());
@@ -88,19 +88,29 @@ return *this;
 }
 
 template<class T, class GP, class SP, class SR>
-Binder& bindProp (const char* name, GP(T::*getter)(), SR(T::*setter)(SP) = nullptr) {
+Binder& bindProp (const char* name, GP(T::*getter)(), SR(T::*setter)(SP)) {
     auto proxyGetter = getter? new NativeProxyMethodC<GP, T>(getter) :nullptr;
     auto proxySetter = setter? new NativeProxyMethodC<SR, T, SP>(setter) :nullptr;
 vm->bind_property(obj, name, getter?proxy_wrapper:nullptr, setter?proxy_wrapper:nullptr, proxyGetter, proxySetter);
 return *this;
 }
 
+template<class T, class GP>
+Binder& bindProp (const char* name, GP(T::*getter)()) {
+return bindProp<T, GP, int, int>(name, getter, nullptr);
+}
+
 template<class GP, class SP, class SR>
-Binder& bindProp (const char* name, GP(*getter)(), SR(*setter)(SP) = nullptr) {
+Binder& bindProp (const char* name, GP(*getter)(), SR(*setter)(SP)) {
     auto proxyGetter = getter? new NativeProxyFuncC<GP>(getter) :nullptr;
     auto proxySetter = setter? new NativeProxyFuncC<SR, SP>(setter) :nullptr;
 vm->bind_property(obj, name, getter?proxy_wrapper:nullptr, setter?proxy_wrapper:nullptr, proxyGetter, proxySetter);
 return *this;
+}
+
+template<class GP>
+Binder& bindProp (const char* name, GP(*getter)()) {
+return bindProp<GP, int, int>(name, getter, nullptr);
 }
 
 Binder& bindPropFunc (const char* name, NativeFuncC  getter, NativeFuncC  setter = nullptr) {
