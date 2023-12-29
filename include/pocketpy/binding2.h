@@ -129,6 +129,24 @@ Binder& bindValue (const char* name, PyObject* val) {
 return *this;
 }
 
+#define OP(NAME) template<class F> Binder& op_##NAME (const F& func) { \
+vm->bind__##NAME##__(PK_OBJ_GET(Type, obj), func); \
+return *this; \
+}
+OP(add) OP(sub) 
+OP(mul) OP(matmul)
+OP(truediv) OP(floordiv)
+OP(mod) OP(pow)
+OP(eq) OP(lt) OP(le) OP(gt) OP(ge)
+OP(rshift) OP(lshift)
+OP(and) OP(or) OP(xor)
+OP(getitem) OP(setitem) OP(delitem) OP(contains)
+OP(repr) OP(str)
+OP(iter) OP(next)
+OP(invert) OP(neg)
+OP(len) OP(bool) OP(hash)
+#undef OP
+
 }; // Binder
 
 template<> inline std::string py_cast<std::string> (VM* vm, PyObject* obj) {

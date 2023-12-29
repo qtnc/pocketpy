@@ -37,10 +37,13 @@ binder
 .bindProp("y", &Point::y)
 .bindProp("xb", &getX, &setX)
 .bind("__len__(self)", &length)
-.bind("__repr__(self)", &repr)
 .bind("__add__(self,other)", &operator+)
 .bind("append(self,other)", &operator+=)
 .bind("print(self,s)", &print)
+.op_repr([](VM* vm, PyObject* self){ 
+Point& pt = CAST(Point&, self);
+return VAR(pt.repr());
+});
 ;
 }
 
