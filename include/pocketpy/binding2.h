@@ -20,6 +20,7 @@ return call(vm, args, seq());
 }
 };//end
 
+template<class B = void>
 struct Binder {
 VM* vm;
 PyObject* mod;
@@ -34,9 +35,10 @@ inline Binder& bind (const char* sig, Ret(*func)(Params...), const char* doc = n
 return *this;
 }
 
-template<typename Ret, typename T, typename... Params>
+template<typename T, typename Ret, typename... Params>
 inline Binder& bind (const char* sig, Ret(T::*func)(Params...), const char* doc = nullptr){
-    auto proxy = new NativeProxyMethodC<Ret, T, Params...>(func);
+typedef Ret(B::*BF)(Params...);
+    auto proxy = new NativeProxyMethodC<Ret, B, Params...>( (BF) func);
     vm->bind(obj, sig, doc, proxy_wrapper, proxy);
 return *this;
 }
@@ -218,8 +220,8 @@ return vm->heap.gcnew<T>(T::_type(vm), std::forward<A>(args)...);
 
 #define PY_REG(CPPNAME, MODNAME, PYNAME) \
 PY_CLASS(CPPNAME, MODNAME, PYNAME) \
-    static inline void _register (pkpy::VM* vm, pkpy::PyObject* mod, pkpy::PyObject* type) { _register(Binder(vm, mod, type)); } \
-    static void _register (Binder binder)
+    static inline void _register (pkpy::VM* vm, pkpy::PyObject* mod, pkpy::PyObject* type) { _register(Binder<CPPNAME>(vm, mod, type)); } \
+    static void _register (Binder<CPPNAME> binder)
 
 
 
