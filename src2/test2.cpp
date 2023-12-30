@@ -1,6 +1,8 @@
 #include<iostream>
     #include "pocketpy.h"
 #include "pocketpy/binding2.h"
+#include<clocale>
+#include<cstdio>
 using namespace pkpy;
 
 struct Point {
@@ -71,4 +73,5 @@ else if (Point* p; try_py_cast(vm, args[0], p)) return py_var(vm, p->repr());
 else return py_var(vm, "Something else");
 });
 
+printf("Locale = %s\n", setlocale(LC_ALL, "French_France.1252"));
 }
