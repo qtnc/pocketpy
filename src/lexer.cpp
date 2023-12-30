@@ -1,5 +1,7 @@
 #include "pocketpy/lexer.h"
 
+double strtod_c (const char*, char**);
+
 namespace pkpy{
 
 
@@ -294,7 +296,7 @@ static bool is_unicode_Lo_char(uint32_t c) {
         double float_out;
         char* p_end;
         try{
-            float_out = std::strtod(text.data(), &p_end);
+            float_out = strtod_c(text.data(), &p_end);
         }catch(...){
             SyntaxError("invalid number literal");
         }

@@ -10,6 +10,8 @@
 
 #include<thread>
 
+double strtod_c (const char*, char**);
+
 namespace pkpy{
 
 void init_builtins(VM* _vm) {
@@ -436,7 +438,7 @@ void init_builtins(VM* _vm) {
             double float_out;
             char* p_end;
             try{
-                float_out = std::strtod(s.data, &p_end);
+                float_out = strtod_c(s.data, &p_end);
                 PK_ASSERT(p_end == s.end());
             }catch(...){
                 vm->ValueError("invalid literal for float(): " + s.escape());
