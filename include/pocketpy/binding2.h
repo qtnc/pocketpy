@@ -104,8 +104,10 @@ return *this;
 
 template<class T, class GP, class SP, class SR>
 Binder& bindProp (const char* name, GP(T::*getter)(), SR(T::*setter)(SP), const char* doc = nullptr) {
-    auto proxyGetter = getter? new NativeProxyMethodC<GP, T>(getter) :nullptr;
-    auto proxySetter = setter? new NativeProxyMethodC<SR, T, SP>(setter) :nullptr;
+typedef GP(B::*Getter)();
+typedef SR(B::*Setter)(SP);
+    auto proxyGetter = getter? new NativeProxyMethodC<GP, B>((Getter)getter) :nullptr;
+    auto proxySetter = setter? new NativeProxyMethodC<SR, B, SP>((Setter)setter) :nullptr;
 vm->bind_property(obj, name, getter?proxy_wrapper:nullptr, setter?proxy_wrapper:nullptr, proxyGetter, proxySetter);
 return *this;
 }
