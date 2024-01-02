@@ -89,6 +89,7 @@ ce->comps.emplace_back(std::move(comp));
 
     void exprLiteral();
     void exprLong();
+    void exprImag();
     void exprBytes();
     void exprFString();
     void exprLambda();

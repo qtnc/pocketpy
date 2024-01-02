@@ -277,4 +277,11 @@ class classmethod:
 def staticmethod(f):
     return f
 
-from _long import long
+
+def complex(*args, **kwargs):
+    import cmath
+    return cmath.complex(*args, **kwargs)
+
+def long(*args, **kwargs):
+    import _long
+    return _long.long(*args, **kwargs)

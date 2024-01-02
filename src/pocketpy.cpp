@@ -1501,6 +1501,12 @@ void add_module_math(VM* vm){
     vm->bind_func<1>(mod, "isinf", PK_LAMBDA(VAR(std::isinf(CAST_F(args[0])))));
     vm->bind_func<1>(mod, "isnan", PK_LAMBDA(VAR(std::isnan(CAST_F(args[0])))));
 
+    vm->bind_func<2>(mod, "isclose", [](VM* vm, ArgsView args) {
+        f64 a = CAST_F(args[0]);
+        f64 b = CAST_F(args[1]);
+        return VAR(std::fabs(a - b) <= Number::kEpsilon);
+    });
+
     vm->bind_func<1>(mod, "exp", PK_LAMBDA(VAR(std::exp(CAST_F(args[0])))));
     vm->bind_func<1>(mod, "log", PK_LAMBDA(VAR(std::log(CAST_F(args[0])))));
     vm->bind_func<1>(mod, "log2", PK_LAMBDA(VAR(std::log2(CAST_F(args[0])))));
@@ -1673,7 +1679,7 @@ void VM::post_init(){
     add_module_operator(this);
     add_module_csv(this);
 
-    for(const char* name: {"this", "functools", "heapq", "bisect", "pickle", "_long", "colorsys", "typing", "datetime", "dataclasses"}){
+    for(const char* name: {"this", "functools", "heapq", "bisect", "pickle", "_long", "colorsys", "typing", "datetime", "dataclasses", "cmath"}){
         _lazy_modules[name] = kPythonLibs[name];
     }
 
