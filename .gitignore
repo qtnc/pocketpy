@@ -40,3 +40,5 @@ libpocketpy.dylib
 obj/
 objd/
 out*.txt
+libpocketpy.dylib.dSYM/
+main.dSYM/

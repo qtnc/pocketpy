@@ -440,7 +440,7 @@ static bool is_unicode_Lo_char(uint32_t c) {
                         case 2: SyntaxError("invalid utf8 sequence: " + std::string(1, c)); break;
                         case 3: SyntaxError("@id contains invalid char"); break;
                         case 4: SyntaxError("invalid JSON token"); break;
-                        default: FATAL_ERROR();
+                        default: PK_FATAL_ERROR();
                     }
                     return true;
                 }
@@ -457,7 +457,7 @@ static bool is_unicode_Lo_char(uint32_t c) {
         return false;
     }
 
-    void Lexer::throw_err(Str type, Str msg){
+    void Lexer::throw_err(StrName type, Str msg){
         int lineno = current_line;
         const char* cursor = curr_char;
         if(peekchar() == '\n'){
@@ -467,14 +467,7 @@ static bool is_unicode_Lo_char(uint32_t c) {
         throw_err(type, msg, lineno, cursor);
     }
 
-    void Lexer::throw_err(Str type, Str msg, int lineno, const char* cursor){
-        Exception e(type, msg);
-        e.st_push(src, lineno, cursor, "");
-        throw e;
-    }
-
-    Lexer::Lexer(std::shared_ptr<SourceData> src) {
-        this->src = src;
+    Lexer::Lexer(VM* vm, std::shared_ptr<SourceData> src) : vm(vm), src(src) {
         this->token_start = src->source.c_str();
         this->curr_char = src->source.c_str();
         this->nexts.push_back(Token{TK("@sof"), token_start, 0, current_line, brackets_level});
@@ -482,7 +475,7 @@ static bool is_unicode_Lo_char(uint32_t c) {
     }
 
     std::vector<Token> Lexer::run() {
-        if(used) FATAL_ERROR();
+        PK_ASSERT(!used)
         used = true;
         while (lex_one_token());
         return std::move(nexts);

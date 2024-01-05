@@ -77,8 +77,8 @@ void init_builtins(VM* _vm) {
         vm->check_non_tagged_type(class_arg, vm->tp_type);
         Type type = PK_OBJ_GET(Type, class_arg);
         if(!vm->isinstance(self_arg, type)){
-            Str _0 = obj_type_name(vm, vm->_tp(self_arg));
-            Str _1 = obj_type_name(vm, type);
+            StrName _0 = obj_type_name(vm, vm->_tp(self_arg));
+            StrName _1 = obj_type_name(vm, type);
             vm->TypeError("super(): " + _0.escape() + " is not an instance of " + _1.escape());
         }
         return vm->heap.gcnew<Super>(vm->tp_super, self_arg, vm->_all_types[type].base);
@@ -280,7 +280,7 @@ void init_builtins(VM* _vm) {
     });
 
     _vm->bind__repr__(_vm->tp_object, [](VM* vm, PyObject* obj) {
-        if(is_tagged(obj)) FATAL_ERROR();
+        if(is_tagged(obj)) PK_FATAL_ERROR();
         std::stringstream ss; // hex
         ss << "<" << OBJ_NAME(vm->_t(obj)) << " object at 0x";
         ss << std::hex << reinterpret_cast<intptr_t>(obj) << ">";
@@ -1314,9 +1314,28 @@ void init_builtins(VM* _vm) {
     // });
 
     // Exception
+    _vm->bind_constructor<-1>("Exception", [](VM* vm, ArgsView args){
+        Type cls = PK_OBJ_GET(Type, args[0]);
+        StrName cls_name = obj_type_name(vm, cls);
+        PyObject* e_obj = vm->heap.gcnew<Exception>(cls, cls_name);
+        e_obj->_enable_instance_dict();
+        PK_OBJ_GET(Exception, e_obj)._self = e_obj;
+        return e_obj;
+    });
+
+    _vm->bind(_vm->_t(_vm->tp_exception), "__init__(self, msg=...)", [](VM* vm, ArgsView args){
+        Exception& self = _CAST(Exception&, args[0]);
+        if(args[1] == vm->Ellipsis){
+            self.msg = "";
+        }else{
+            self.msg = CAST(Str, args[1]);
+        }
+        return vm->None;
+    });
+
     _vm->bind__repr__(_vm->tp_exception, [](VM* vm, PyObject* obj) {
         Exception& self = _CAST(Exception&, obj);
-        return VAR(fmt(self.type.sv(), '(', self.msg.escape(), ')'));
+        return VAR(fmt(obj_type_name(vm, obj->type), '(', self.msg.escape(), ')'));
     });
 
     _vm->bind__str__(_vm->tp_exception, [](VM* vm, PyObject* obj) {
@@ -1546,14 +1565,14 @@ void add_module_traceback(VM* vm){
     PyObject* mod = vm->new_module("traceback");
     vm->bind_func<0>(mod, "print_exc", [](VM* vm, ArgsView args) {
         if(vm->_last_exception==nullptr) vm->ValueError("no exception");
-        Exception& e = CAST(Exception&, vm->_last_exception);
+        Exception& e = _CAST(Exception&, vm->_last_exception);
         vm->stdout_write(e.summary());
         return vm->None;
     });
 
     vm->bind_func<0>(mod, "format_exc", [](VM* vm, ArgsView args) {
         if(vm->_last_exception==nullptr) vm->ValueError("no exception");
-        Exception& e = CAST(Exception&, vm->_last_exception);
+        Exception& e = _CAST(Exception&, vm->_last_exception);
         return VAR(e.summary());
     });
 }
@@ -1629,7 +1648,7 @@ void VM::post_init(){
     });
     bind_property(_t(tp_type), "__name__", [](VM* vm, ArgsView args){
         const PyTypeInfo& info = vm->_all_types[PK_OBJ_GET(Type, args[0])];
-        return VAR(info.name);
+        return VAR(info.name.sv());
     });
     bind_property(_t(tp_type), "__module__", [](VM* vm, ArgsView args){
         const PyTypeInfo& info = vm->_all_types[PK_OBJ_GET(Type, args[0])];
@@ -1688,7 +1707,7 @@ void VM::post_init(){
         this->_exec(code, this->builtins);
         code = compile(kPythonLibs["_set"], "<set>", EXEC_MODE);
         this->_exec(code, this->builtins);
-    }catch(Exception& e){
+    }catch(const Exception& e){
         std::cerr << e.summary() << std::endl;
         std::cerr << "failed to load builtins module!!" << std::endl;
         exit(1);
@@ -1715,15 +1734,15 @@ void VM::post_init(){
 #endif
 }
 
-CodeObject_ VM::compile(Str source, Str filename, CompileMode mode, bool unknown_global_scope) {
-    Compiler compiler(this, std::move(source), filename, mode, unknown_global_scope);
+CodeObject_ VM::compile(const Str& source, const Str& filename, CompileMode mode, bool unknown_global_scope) {
+    Compiler compiler(this, source, filename, mode, unknown_global_scope);
     try{
         return compiler.compile();
-    }catch(Exception& e){
+    }catch(const Exception& e){
 #if PK_DEBUG_FULL_EXCEPTION
         std::cerr << e.summary() << std::endl;
 #endif
-        _error(e);
+        _error(e.self());
         return nullptr;
     }
 }

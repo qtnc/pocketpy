@@ -41,7 +41,7 @@ namespace pkpy{
     }
 
     int ManagedHeap::collect(){
-        if(_gc_lock_counter > 0) FATAL_ERROR();
+        PK_ASSERT(_gc_lock_counter == 0)
         mark();
         int freed = sweep();
         return freed;
@@ -52,7 +52,7 @@ namespace pkpy{
         for(PyObject* obj: gen) { obj->~PyObject(); pool64_dealloc(obj); }
 #if PK_DEBUG_GC_STATS
         for(auto& [type, count]: deleted){
-            std::cout << "GC: " << obj_type_name(vm, type) << "=" << count << std::endl;
+            std::cout << "GC: " << obj_type_name(vm, type).sv() << "=" << count << std::endl;
         }
 #endif
     }

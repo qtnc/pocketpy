@@ -1,4 +1,5 @@
 #include "pocketpy/vm.h"
+#include "pocketpy/config.h"
 
 namespace pkpy{
 
@@ -27,7 +28,7 @@ namespace pkpy{
                 first = false;
                 if(!is_non_tagged_type(k, vm->tp_str)){
                     vm->TypeError(fmt("json keys must be string, got ", obj_type_name(vm, vm->_tp(k))));
-                    UNREACHABLE();
+                    PK_UNREACHABLE();
                 }
                 ss << _CAST(Str&, k).escape(false) << ": ";
                 write_object(v);
@@ -57,7 +58,7 @@ namespace pkpy{
                 write_dict(_CAST(Dict&, obj));
             }else{
                 vm->TypeError(fmt("unrecognized type ", obj_type_name(vm, obj_t).escape()));
-                UNREACHABLE();
+                PK_UNREACHABLE();
             }
         }
 
@@ -123,7 +124,7 @@ namespace pkpy{
 
     FrameId VM::top_frame(){
 #if PK_DEBUG_EXTRA_CHECK
-        if(callstack.empty()) FATAL_ERROR();
+        if(callstack.empty()) PK_FATAL_ERROR();
 #endif
         return FrameId(&callstack.data(), callstack.size()-1);
     }
@@ -174,9 +175,16 @@ namespace pkpy{
             _stderr(sum.data, sum.size);
         }
 #if !PK_DEBUG_FULL_EXCEPTION
-        catch (const std::exception& e) {
+        catch(const std::exception& e) {
             Str msg = "An std::exception occurred! It could be a bug.\n";
             msg = msg + e.what() + "\n";
+            _stderr(msg.data, msg.size);
+        }
+        catch(NeedMoreLines){
+            throw;
+        }
+        catch(...) {
+            Str msg = "An unknown exception occurred! It could be a bug. Please report it to @blueloveTH on GitHub.\n";
             _stderr(msg.data, msg.size);
         }
 #endif
@@ -203,15 +211,15 @@ namespace pkpy{
             obj,
             base,
             mod,
-            name.sv(),
+            name,
             subclass_enabled,
         };
         _all_types.push_back(info);
         return obj;
     }
 
-    Type VM::_new_type_object(StrName name, Type base) {
-        PyObject* obj = new_type_object(nullptr, name, base, false);
+    Type VM::_new_type_object(StrName name, Type base, bool subclass_enabled) {
+        PyObject* obj = new_type_object(nullptr, name, base, subclass_enabled);
         return PK_OBJ_GET(Type, obj);
     }
 
@@ -229,15 +237,6 @@ namespace pkpy{
     Type VM::_type(const Str& type){
         PyObject* obj = _find_type_object(type);
         return PK_OBJ_GET(Type, obj);
-    }
-
-    PyTypeInfo* VM::_type_info(const Str& type){
-        PyObject* obj = builtins->attr().try_get_likely_found(type);
-        if(obj == nullptr){
-            for(auto& t: _all_types) if(t.name == type) return &t;
-            FATAL_ERROR();
-        }
-        return &_all_types[PK_OBJ_GET(Type, obj)];
     }
 
     PyTypeInfo* VM::_type_info(Type type){
@@ -471,7 +470,7 @@ i64 VM::py_hash(PyObject* obj){
     }
     if(has_custom_eq){
         TypeError(fmt("unhashable type: ", ti->name.escape()));
-        return 0;
+        PK_UNREACHABLE();
     }else{
         return PK_BITS(obj);
     }
@@ -527,7 +526,7 @@ PyObject* VM::_format_string(Str spec, PyObject* obj){
         }
     }catch(...){
         ValueError("invalid format specifer");
-        UNREACHABLE();
+        PK_UNREACHABLE();
     }
 
     if(type != 'f' && dot >= 0) ValueError("precision not allowed in the format specifier");
@@ -664,7 +663,7 @@ void VM::_log_s_data(const char* title) {
     if(title) ss << title << " | ";
     std::map<PyObject**, int> sp_bases;
     for(Frame& f: callstack.data()){
-        if(f._sp_base == nullptr) FATAL_ERROR();
+        if(f._sp_base == nullptr) PK_FATAL_ERROR();
         sp_bases[f._sp_base] += 1;
     }
     FrameId frame = top_frame();
@@ -727,7 +726,7 @@ void VM::init_builtin_types(){
     PK_ASSERT(tp_bound_method == _new_type_object("bound_method"));
 
     PK_ASSERT(tp_super == _new_type_object("super"));
-    PK_ASSERT(tp_exception == _new_type_object("_Exception"));
+    PK_ASSERT(tp_exception == _new_type_object("Exception", 0, true));
     PK_ASSERT(tp_bytes == _new_type_object("bytes"));
     PK_ASSERT(tp_mappingproxy == _new_type_object("mappingproxy"));
     PK_ASSERT(tp_dict == _new_type_object("dict"));
@@ -759,6 +758,7 @@ void VM::init_builtin_types(){
     builtins->attr().set("StopIteration", StopIteration);
     builtins->attr().set("NotImplemented", NotImplemented);
     builtins->attr().set("slice", _t(tp_slice));
+    builtins->attr().set("Exception", _t(tp_exception));
 
     post_init();
     this->_main = new_module("__main__");
@@ -810,7 +810,7 @@ void VM::_prepare_py_call(PyObject** buffer, ArgsView args, ArgsView kwargs, con
         vm->TypeError(fmt(
             co->name, "() takes ", decl_argc, " positional arguments but ", args.size(), " were given"
         ));
-        UNREACHABLE();
+        PK_UNREACHABLE();
     }
 
     int i = 0;
@@ -871,7 +871,7 @@ PyObject* VM::vectorcall(int ARGC, int KWARGC, bool op_call){
 
     // handle boundmethod, do a patch
     if(is_non_tagged_type(callable, tp_bound_method)){
-        if(method_call) FATAL_ERROR();
+        if(method_call) PK_FATAL_ERROR();
         auto& bm = CAST(BoundMethod&, callable);
         callable = bm.func;      // get unbound method
         p1[-(ARGC + 2)] = bm.func;
@@ -919,11 +919,11 @@ PyObject* VM::vectorcall(int ARGC, int KWARGC, bool op_call){
                 TypeError(fmt(
                     co->name, "() takes ", decl->args.size(), " positional arguments but ", args.size(), " were given"
                 ));
-                UNREACHABLE();
+                PK_UNREACHABLE();
             }
             if(!kwargs.empty()){
                 TypeError(fmt(co->name, "() takes no keyword arguments"));
-                UNREACHABLE();
+                PK_UNREACHABLE();
             }
             s_data.reset(_base + co_nlocals);
             int i = 0;
@@ -956,7 +956,7 @@ __FAST_CALL:
     }
 
     if(is_non_tagged_type(callable, tp_type)){
-        if(method_call) FATAL_ERROR();
+        if(method_call) PK_FATAL_ERROR();
         // [type, NULL, args..., kwargs...]
         PyObject* new_f = find_name_in_mro(callable, __new__);
         PyObject* obj;
@@ -966,7 +966,7 @@ __FAST_CALL:
         if(new_f == cached_object__new__) {
             // fast path for object.__new__
             Type t = PK_OBJ_GET(Type, callable);
-            obj= vm->heap.gcnew<DummyInstance>(t);
+            obj = vm->heap.gcnew<DummyInstance>(t);
         }else{
             PUSH(new_f);
             PUSH(PY_NULL);
@@ -1136,7 +1136,7 @@ PyObject* VM::bind(PyObject* obj, const char* sig, const char* docstring, Native
     try{
         // fn(a, b, *c, d=1) -> None
         co = compile("def " + Str(sig) + " : pass", "<bind>", EXEC_MODE);
-    }catch(Exception&){
+    }catch(const Exception&){
         throw std::runtime_error("invalid signature: " + std::string(sig));
     }
     if(co->func_decls.size() != 1){
@@ -1169,12 +1169,18 @@ _1 = heap.gcnew<NativeFunc>(tp_native_func, fset, 2, false);
     return prop;
 }
 
-void VM::_error(Exception e){
+void VM::_builtin_error(StrName type){ _error(call(builtins->attr(type))); }
+void VM::_builtin_error(StrName type, PyObject* arg){ _error(call(builtins->attr(type), arg)); }
+void VM::_builtin_error(StrName type, const Str& msg){ _builtin_error(type, VAR(msg)); }
+
+void VM::_error(PyObject* e_obj){
+    PK_ASSERT(isinstance(e_obj, tp_exception))
+    Exception& e = PK_OBJ_GET(Exception, e_obj);
     if(callstack.empty()){
         e.is_re = false;
         throw e;
     }
-    PUSH(VAR(std::move(e)));
+    PUSH(e_obj);
     _raise();
 }
 
@@ -1209,7 +1215,7 @@ void ManagedHeap::mark() {
     for(auto [_, co]: vm->_cached_codes) co->_gc_mark();
 }
 
-Str obj_type_name(VM *vm, Type type){
+StrName obj_type_name(VM *vm, Type type){
     return vm->_all_types[type].name;
 }
 

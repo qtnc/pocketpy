@@ -38,14 +38,14 @@ namespace pkpy{
             SyntaxError("maximum number of local variables exceeded");
         }
         if(ctx()->co->consts.size() > 65535){
-            std::map<std::string, int> counts;
-            for(PyObject* c: ctx()->co->consts){
-                std::string key = obj_type_name(vm, vm->_tp(c)).str();
-                counts[key] += 1;
-            }
-            for(auto pair: counts){
-                std::cout << pair.first << ": " << pair.second << std::endl;
-            }
+            // std::map<std::string_view, int> counts;
+            // for(PyObject* c: ctx()->co->consts){
+            //     std::string_view key = obj_type_name(vm, vm->_tp(c)).sv();
+            //     counts[key] += 1;
+            // }
+            // for(auto pair: counts){
+            //     std::cout << pair.first << ": " << pair.second << std::endl;
+            // }
             SyntaxError("maximum number of constants exceeded");
         }
         if(codes.size() > 65535 && ctx()->co->src->mode != JSON_MODE){
@@ -299,7 +299,7 @@ namespace pkpy{
             case TK("**"):
                 ctx()->s_expr.push(make_expr<StarredExpr>(2, ctx()->s_expr.popx()));
                 break;
-            default: FATAL_ERROR();
+            default: PK_FATAL_ERROR();
         }
     }
 
@@ -524,7 +524,7 @@ __SUBSCR_END:
         if(is_slice){
             e->b = std::move(slice);
         }else{
-            if(state != 1) FATAL_ERROR();
+            PK_ASSERT(state == 1)
             e->b = std::move(slice->start);
         }
         ctx()->s_expr.push(std::move(e));
@@ -719,8 +719,9 @@ __EAT_DOTS_END:
         do {
             StrName as_name;
             consume(TK("except"));
-            if(match(TK("@id"))){
-                ctx()->emit_(OP_EXCEPTION_MATCH, StrName(prev().sv()).index, prev().line);
+            if(is_expression()){
+                EXPR(false);      // push assumed type on to the stack
+                ctx()->emit_(OP_EXCEPTION_MATCH, BC_NOARG, prev().line);
                 if(match(TK("as"))){
                     consume(TK("@id"));
                     as_name = StrName(prev().sv());
@@ -915,14 +916,8 @@ __EAT_DOTS_END:
                 consume_end_stmt();
                 break;
             case TK("raise"): {
-                consume(TK("@id"));
-                int dummy_t = StrName(prev().sv()).index;
-                if(match(TK("(")) && !match(TK(")"))){
-                    EXPR(false); consume(TK(")"));
-                }else{
-                    ctx()->emit_(OP_LOAD_NONE, BC_NOARG, kw_line);
-                }
-                ctx()->emit_(OP_RAISE, dummy_t, kw_line);
+                EXPR(false);
+                ctx()->emit_(OP_RAISE, BC_NOARG, kw_line);
                 consume_end_stmt();
             } break;
             case TK("del"): {
@@ -1168,7 +1163,7 @@ __EAT_DOTS_END:
         if(std::holds_alternative<Str>(value)){
             obj = VAR(std::get<Str>(value));
         }
-        if(obj == nullptr) FATAL_ERROR();
+        PK_ASSERT(obj != nullptr)
         return obj;
     }
 
@@ -1196,14 +1191,14 @@ __EAT_DOTS_END:
         this->used = false;
         this->unknown_global_scope = unknown_global_scope;
         this->lexer = std::make_unique<Lexer>(
-            std::make_shared<SourceData>(source, filename, mode)
+            vm, std::make_shared<SourceData>(source, filename, mode)
         );
         init_pratt_rules();
     }
 
 
     CodeObject_ Compiler::compile(){
-        if(used) FATAL_ERROR();
+        PK_ASSERT(!used)
         used = true;
 
         tokens = lexer->run();
@@ -1237,4 +1232,11 @@ __EAT_DOTS_END:
         return code;
     }
 
+    // TODO: refactor this
+    void Lexer::throw_err(StrName type, Str msg, int lineno, const char* cursor){
+        PyObject* e_obj = vm->call(vm->builtins->attr(type), VAR(msg));
+        Exception& e = PK_OBJ_GET(Exception, e_obj);
+        e.st_push(src, lineno, cursor, "");
+        throw e;
+    }
 }   // namespace pkpy
