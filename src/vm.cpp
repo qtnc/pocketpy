@@ -28,7 +28,6 @@ namespace pkpy{
                 first = false;
                 if(!is_non_tagged_type(k, vm->tp_str)){
                     vm->TypeError(fmt("json keys must be string, got ", obj_type_name(vm, vm->_tp(k))));
-                    PK_UNREACHABLE();
                 }
                 ss << _CAST(Str&, k).escape(false) << ": ";
                 write_object(v);
@@ -58,7 +57,6 @@ namespace pkpy{
                 write_dict(_CAST(Dict&, obj));
             }else{
                 vm->TypeError(fmt("unrecognized type ", obj_type_name(vm, obj_t).escape()));
-                PK_UNREACHABLE();
             }
         }
 
@@ -470,7 +468,7 @@ i64 VM::py_hash(PyObject* obj){
     }
     if(has_custom_eq){
         TypeError(fmt("unhashable type: ", ti->name.escape()));
-        PK_UNREACHABLE();
+        PK_UNREACHABLE()
     }else{
         return PK_BITS(obj);
     }
@@ -526,7 +524,6 @@ PyObject* VM::_format_string(Str spec, PyObject* obj){
         }
     }catch(...){
         ValueError("invalid format specifer");
-        PK_UNREACHABLE();
     }
 
     if(type != 'f' && dot >= 0) ValueError("precision not allowed in the format specifier");
@@ -589,7 +586,7 @@ static std::string _opcode_argstr(VM* vm, Bytecode byte, const CodeObject* co){
             break;
         case OP_LOAD_NAME: case OP_LOAD_GLOBAL: case OP_LOAD_NONLOCAL: case OP_STORE_GLOBAL:
         case OP_LOAD_ATTR: case OP_LOAD_METHOD: case OP_STORE_ATTR: case OP_DELETE_ATTR:
-        case OP_BEGIN_CLASS: case OP_RAISE: case OP_GOTO:
+        case OP_BEGIN_CLASS: case OP_GOTO:
         case OP_DELETE_GLOBAL: case OP_INC_GLOBAL: case OP_DEC_GLOBAL: case OP_STORE_CLASS_ATTR:
             argStr += fmt(" (", StrName(byte.arg).sv(), ")").sv();
             break;
@@ -810,7 +807,6 @@ void VM::_prepare_py_call(PyObject** buffer, ArgsView args, ArgsView kwargs, con
         vm->TypeError(fmt(
             co->name, "() takes ", decl_argc, " positional arguments but ", args.size(), " were given"
         ));
-        PK_UNREACHABLE();
     }
 
     int i = 0;
@@ -919,11 +915,9 @@ PyObject* VM::vectorcall(int ARGC, int KWARGC, bool op_call){
                 TypeError(fmt(
                     co->name, "() takes ", decl->args.size(), " positional arguments but ", args.size(), " were given"
                 ));
-                PK_UNREACHABLE();
             }
             if(!kwargs.empty()){
                 TypeError(fmt(co->name, "() takes no keyword arguments"));
-                PK_UNREACHABLE();
             }
             s_data.reset(_base + co_nlocals);
             int i = 0;

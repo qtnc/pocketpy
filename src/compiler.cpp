@@ -30,22 +30,13 @@ namespace pkpy{
         // add a `return None` in the end as a guard
         // previously, we only do this if the last opcode is not a return
         // however, this is buggy...since there may be a jump to the end (out of bound) even if the last opcode is a return
-        ctx()->emit_(OP_LOAD_NONE, BC_NOARG, BC_KEEPLINE);
-        ctx()->emit_(OP_RETURN_VALUE, BC_NOARG, BC_KEEPLINE);
+        ctx()->emit_(OP_RETURN_VALUE, 1, BC_KEEPLINE);
         // some check here
         std::vector<Bytecode>& codes = ctx()->co->codes;
         if(ctx()->co->varnames.size() > PK_MAX_CO_VARNAMES){
             SyntaxError("maximum number of local variables exceeded");
         }
         if(ctx()->co->consts.size() > 65535){
-            // std::map<std::string_view, int> counts;
-            // for(PyObject* c: ctx()->co->consts){
-            //     std::string_view key = obj_type_name(vm, vm->_tp(c)).sv();
-            //     counts[key] += 1;
-            // }
-            // for(auto pair: counts){
-            //     std::cout << pair.first << ": " << pair.second << std::endl;
-            // }
             SyntaxError("maximum number of constants exceeded");
         }
         if(codes.size() > 65535 && ctx()->co->src->mode != JSON_MODE){
@@ -63,6 +54,7 @@ namespace pkpy{
                 bc.arg = ctx()->co->_get_block_codei(i).end;
             }
         }
+        // pre-compute func->is_simple
         FuncDecl_ func = contexts.top().func;
         if(func){
             func->is_simple = true;
@@ -558,7 +550,7 @@ __SUBSCR_END:
         do {
             consume(TK("@id"));
             Str name = prev().str();
-            ctx()->emit_(OP_IMPORT_PATH, ctx()->add_const(VAR(name)), prev().line);
+            ctx()->emit_(OP_IMPORT_PATH, ctx()->add_const_string(name.sv()), prev().line);
             if (match(TK("as"))) {
                 consume(TK("@id"));
                 name = prev().str();
@@ -610,7 +602,7 @@ __EAT_DOTS_END:
             }
         }
 
-        ctx()->emit_(OP_IMPORT_PATH, ctx()->add_const(VAR(ss.str())), prev().line);
+        ctx()->emit_(OP_IMPORT_PATH, ctx()->add_const_string(ss.str().sv()), prev().line);
         consume(TK("import"));
 
         if (match(TK("*"))) {
@@ -716,34 +708,56 @@ __EAT_DOTS_END:
             ctx()->emit_(OP_JUMP_ABSOLUTE, BC_NOARG, BC_KEEPLINE)
         };
         ctx()->exit_block();
-        do {
-            StrName as_name;
-            consume(TK("except"));
-            if(is_expression()){
-                EXPR(false);      // push assumed type on to the stack
-                ctx()->emit_(OP_EXCEPTION_MATCH, BC_NOARG, prev().line);
-                if(match(TK("as"))){
-                    consume(TK("@id"));
-                    as_name = StrName(prev().sv());
+
+        int finally_entry = -1;
+        if(curr().type != TK("finally")){
+            do {
+                StrName as_name;
+                consume(TK("except"));
+                if(is_expression()){
+                    EXPR(false);      // push assumed type on to the stack
+                    ctx()->emit_(OP_EXCEPTION_MATCH, BC_NOARG, prev().line);
+                    if(match(TK("as"))){
+                        consume(TK("@id"));
+                        as_name = StrName(prev().sv());
+                    }
+                }else{
+                    ctx()->emit_(OP_LOAD_TRUE, BC_NOARG, BC_KEEPLINE);
                 }
-            }else{
-                ctx()->emit_(OP_LOAD_TRUE, BC_NOARG, BC_KEEPLINE);
-            }
-            int patch = ctx()->emit_(OP_POP_JUMP_IF_FALSE, BC_NOARG, BC_KEEPLINE);
-            // on match
-            if(!as_name.empty()){
-                ctx()->emit_(OP_DUP_TOP, BC_NOARG, BC_KEEPLINE);
-                ctx()->emit_store_name(name_scope(), as_name, BC_KEEPLINE);
-            }
-            // pop the exception 
-            ctx()->emit_(OP_POP_EXCEPTION, BC_NOARG, BC_KEEPLINE);
+                int patch = ctx()->emit_(OP_POP_JUMP_IF_FALSE, BC_NOARG, BC_KEEPLINE);
+                // on match
+                if(!as_name.empty()){
+                    ctx()->emit_(OP_DUP_TOP, BC_NOARG, BC_KEEPLINE);
+                    ctx()->emit_store_name(name_scope(), as_name, BC_KEEPLINE);
+                }
+                // pop the exception 
+                ctx()->emit_(OP_POP_EXCEPTION, BC_NOARG, BC_KEEPLINE);
+                compile_block_body();
+                patches.push_back(ctx()->emit_(OP_JUMP_ABSOLUTE, BC_NOARG, BC_KEEPLINE));
+                ctx()->patch_jump(patch);
+            }while(curr().type == TK("except"));
+        }
+
+        if(match(TK("finally"))){
+            int patch = ctx()->emit_(OP_JUMP_ABSOLUTE, BC_NOARG, BC_KEEPLINE);
+            finally_entry = ctx()->co->codes.size();
             compile_block_body();
-            patches.push_back(ctx()->emit_(OP_JUMP_ABSOLUTE, BC_NOARG, BC_KEEPLINE));
+            ctx()->emit_(OP_JUMP_ABSOLUTE_TOP, BC_NOARG, BC_KEEPLINE);
             ctx()->patch_jump(patch);
-        }while(curr().type == TK("except"));
+        }
         // no match, re-raise
+        if(finally_entry != -1){
+            ctx()->emit_(OP_LOAD_INTEGER, (uint16_t)ctx()->co->codes.size()+2, BC_KEEPLINE);
+            ctx()->emit_(OP_JUMP_ABSOLUTE, finally_entry, BC_KEEPLINE);
+        }
         ctx()->emit_(OP_RE_RAISE, BC_NOARG, BC_KEEPLINE);
+
+        // no exception or no match, jump to the end
         for (int patch : patches) ctx()->patch_jump(patch);
+        if(finally_entry != -1){
+            ctx()->emit_(OP_LOAD_INTEGER, (uint16_t)ctx()->co->codes.size()+2, BC_KEEPLINE);
+            ctx()->emit_(OP_JUMP_ABSOLUTE, finally_entry, BC_KEEPLINE);
+        }
     }
 
     void Compiler::compile_decorated(){
@@ -844,12 +858,14 @@ __EAT_DOTS_END:
             case TK("return"):
                 if (contexts.size() <= 1) SyntaxError("'return' outside function");
                 if(match_end_stmt()){
-                    ctx()->emit_(OP_LOAD_NONE, BC_NOARG, kw_line);
+                    ctx()->emit_(OP_RETURN_VALUE, 1, kw_line);
                 }else{
                     EXPR_TUPLE(false);
+                    // check if it is a generator
+                    if(ctx()->co->is_generator) SyntaxError("'return' with argument inside generator function");
                     consume_end_stmt();
+                    ctx()->emit_(OP_RETURN_VALUE, BC_NOARG, kw_line);
                 }
-                ctx()->emit_(OP_RETURN_VALUE, BC_NOARG, kw_line);
                 break;
             /*************************************************/
             case TK("if"): compile_if_stmt(); break;

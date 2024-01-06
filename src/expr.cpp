@@ -2,6 +2,10 @@
 
 namespace pkpy{
 
+    inline bool is_imm_int(i64 v){
+        return v >= INT16_MIN && v <= INT16_MAX;
+    }
+
     int CodeEmitContext::get_loop() const {
         int index = curr_block_i;
         while(index >= 0){
@@ -82,22 +86,35 @@ namespace pkpy{
         return index;
     }
 
-    int CodeEmitContext::add_const(PyObject* v){
-        // simple deduplication, only works for int/float
-        for(int i=0; i<co->consts.size(); i++){
-            if(co->consts[i] == v) return i;
+    int CodeEmitContext::add_const_string(std::string_view key){
+        auto it = _co_consts_string_dedup_map.find(key);
+        if(it != _co_consts_string_dedup_map.end()){
+            return it->second;
+        }else{
+            co->consts.push_back(VAR(key));
+            int index = co->consts.size() - 1;
+            _co_consts_string_dedup_map[std::string(key)] = index;
+            return index;
         }
-        // string deduplication
+    }
+
+    int CodeEmitContext::add_const(PyObject* v){
         if(is_non_tagged_type(v, vm->tp_str)){
-            const Str& v_str = PK_OBJ_GET(Str, v);
-            for(int i=0; i<co->consts.size(); i++){
-                if(is_non_tagged_type(co->consts[i], vm->tp_str)){
-                    if(PK_OBJ_GET(Str, co->consts[i]) == v_str) return i;
-                }
+            // warning: should use add_const_string() instead
+            return add_const_string(PK_OBJ_GET(Str, v).sv());
+        }else{
+            // non-string deduplication
+            auto it = _co_consts_nonstring_dedup_map.find(v);
+            if(it != _co_consts_nonstring_dedup_map.end()){
+                return it->second;
+            }else{
+                co->consts.push_back(v);
+                int index = co->consts.size() - 1;
+                _co_consts_nonstring_dedup_map[v] = index;
+                return index;
             }
         }
-        co->consts.push_back(v);
-        return co->consts.size() - 1;
+        PK_UNREACHABLE()
     }
 
     int CodeEmitContext::add_func_decl(FuncDecl_ decl){
@@ -211,8 +228,7 @@ namespace pkpy{
     }
 
     void LongExpr::emit_(CodeEmitContext* ctx) {
-        VM* vm = ctx->vm;
-        ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(s)), line);
+        ctx->emit_(OP_LOAD_CONST, ctx->add_const_string(s.sv()), line);
         ctx->emit_(OP_BUILD_LONG, BC_NOARG, line);
     }
 
@@ -223,30 +239,31 @@ namespace pkpy{
     }
 
     void BytesExpr::emit_(CodeEmitContext* ctx) {
-        VM* vm = ctx->vm;
-        ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(s)), line);
+        ctx->emit_(OP_LOAD_CONST, ctx->add_const_string(s.sv()), line);
         ctx->emit_(OP_BUILD_BYTES, BC_NOARG, line);
     }
 
     void LiteralExpr::emit_(CodeEmitContext* ctx) {
         VM* vm = ctx->vm;
-        PyObject* obj = nullptr;
         if(std::holds_alternative<i64>(value)){
             i64 _val = std::get<i64>(value);
-            if(_val >= INT16_MIN && _val <= INT16_MAX){
+            if(is_imm_int(_val)){
                 ctx->emit_(OP_LOAD_INTEGER, (uint16_t)_val, line);
                 return;
             }
-            obj = VAR(_val);
+            ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(_val)), line);
+            return;
         }
         if(std::holds_alternative<f64>(value)){
-            obj = VAR(std::get<f64>(value));
+            f64 _val = std::get<f64>(value);
+            ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(_val)), line);
+            return;
         }
         if(std::holds_alternative<Str>(value)){
-            obj = VAR(std::get<Str>(value));
+            std::string_view key = std::get<Str>(value).sv();
+            ctx->emit_(OP_LOAD_CONST, ctx->add_const_string(key), line);
+            return;
         }
-        PK_ASSERT(obj != nullptr)
-        ctx->emit_(OP_LOAD_CONST, ctx->add_const(obj), line);
     }
 
     void NegatedExpr::emit_(CodeEmitContext* ctx){
@@ -256,7 +273,7 @@ namespace pkpy{
             LiteralExpr* lit = static_cast<LiteralExpr*>(child.get());
             if(std::holds_alternative<i64>(lit->value)){
                 i64 _val = -std::get<i64>(lit->value);
-                if(_val >= INT16_MIN && _val <= INT16_MAX){
+                if(is_imm_int(_val)){
                     ctx->emit_(OP_LOAD_INTEGER, (uint16_t)_val, line);
                 }else{
                     ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(_val)), line);
@@ -264,8 +281,8 @@ namespace pkpy{
                 return;
             }
             if(std::holds_alternative<f64>(lit->value)){
-                PyObject* obj = VAR(-std::get<f64>(lit->value));
-                ctx->emit_(OP_LOAD_CONST, ctx->add_const(obj), line);
+                f64 _val = -std::get<f64>(lit->value);
+                ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(_val)), line);
                 return;
             }
         }
@@ -410,7 +427,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
                 ctx->emit_(OP_LOAD_ATTR, attr.index, line);
             }
         }else{
-            int index = ctx->add_const(py_var(ctx->vm, expr));
+            int index = ctx->add_const_string(expr.sv());
             ctx->emit_(OP_FSTRING_EVAL, index, line);
         }
         if(repr){
@@ -419,7 +436,6 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
     }
 
     void FStringExpr::emit_(CodeEmitContext* ctx){
-        VM* vm = ctx->vm;
         int i = 0;              // left index
         int j = 0;              // right index
         int count = 0;          // how many string parts
@@ -442,7 +458,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
                         for(char c: spec) if(!fmt_valid_char_set.count(c)){ ok = false; break; }
                         if(ok){
                             _load_simple_expr(ctx, expr.substr(0, conon));
-                            ctx->emit_(OP_FORMAT_STRING, ctx->add_const(VAR(spec)), line);
+                            ctx->emit_(OP_FORMAT_STRING, ctx->add_const_string(spec.sv()), line);
                         }else{
                             // ':' is not a spec indicator
                             _load_simple_expr(ctx, expr);
@@ -459,7 +475,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
                     if(j+1 < src.size && src[j+1] == '{'){
                         // {{ -> {
                         j++;
-                        ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR("{")), line);
+                        ctx->emit_(OP_LOAD_CONST, ctx->add_const_string("{"), line);
                         count++;
                     }else{
                         // { -> }
@@ -471,7 +487,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
                     if(j+1 < src.size && src[j+1] == '}'){
                         // }} -> }
                         j++;
-                        ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR("}")), line);
+                        ctx->emit_(OP_LOAD_CONST, ctx->add_const_string("}"), line);
                         count++;
                     }else{
                         // } -> error
@@ -483,7 +499,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
                     i = j;
                     while(j < src.size && src[j] != '{' && src[j] != '}') j++;
                     Str literal = src.substr(i, j-i);
-                    ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(literal)), line);
+                    ctx->emit_(OP_LOAD_CONST, ctx->add_const_string(literal.sv()), line);
                     count++;
                     continue;   // skip j++
                 }
@@ -494,7 +510,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
         if(flag){
             // literal
             Str literal = src.substr(i, src.size-i);
-            ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(literal)), line);
+            ctx->emit_(OP_LOAD_CONST, ctx->add_const_string(literal.sv()), line);
             count++;
         }
 
@@ -574,7 +590,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
                         item.second->emit_(ctx);
                     }else{
                         // k=v
-                        int index = ctx->add_const(py_var(ctx->vm, item.first));
+                        int index = ctx->add_const_string(item.first.sv());
                         ctx->emit_(OP_LOAD_CONST, index, line);
                         item.second->emit_(ctx);
                         ctx->emit_(OP_BUILD_TUPLE, 2, line);
@@ -624,7 +640,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
             case TK("!="):  ctx->emit_(OP_COMPARE_NE, BC_NOARG, line);  break;
             case TK(">"):   ctx->emit_(OP_COMPARE_GT, BC_NOARG, line);  break;
             case TK(">="):  ctx->emit_(OP_COMPARE_GE, BC_NOARG, line);  break;
-            default: PK_UNREACHABLE();
+            default: PK_UNREACHABLE()
         }
         // [b, RES]
         int index = ctx->emit_(OP_SHORTCUT_IF_FALSE_OR_POP, BC_NOARG, line);
