@@ -54,6 +54,10 @@ CtorBinder<T, Params...>::bind(vm, obj, sig);
 return *this;
 }
 
+Binder& bindNoCtor () {
+return bindFunc("__new__(c)", [](VM* vm, ArgsView args){ vm->NotImplementedError(); return vm->None; });
+}
+
 template<class T>
 Binder& bindStaticProp (const char* name, T* prop) {
 vm->bind_property(obj, name,
@@ -76,12 +80,12 @@ typedef P T::*Prop;
 vm->bind_property(obj, name,
 [](VM* vm, ArgsView args){
 Prop prop = lambda_get_userdata<Prop>(args.begin());
-T& self = _py_cast<T&>(vm, args[0]);
+B& self = _py_cast<B&>(vm, args[0]);
 return py_var(vm, self.*prop);
 },
 [](VM* vm, ArgsView args){
 Prop prop = lambda_get_userdata<Prop>(args.begin());
-T& self = _py_cast<T&>(vm, args[0]);
+B& self = _py_cast<B&>(vm, args[0]);
 self.*prop = py_cast<P>(vm, args[1]);
 return vm->None;
 },
