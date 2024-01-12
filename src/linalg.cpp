@@ -41,6 +41,61 @@ namespace pkpy{
         });
 
 
+// https://github.com/Unity-Technologies/UnityCsReference/blob/master/Runtime/Export/Math/Vector2.cs#L289
+static Vec2 SmoothDamp(Vec2 current, Vec2 target, PyVec2& currentVelocity, float smoothTime, float maxSpeed, float deltaTime)
+{
+    // Based on Game Programming Gems 4 Chapter 1.10
+    smoothTime = std::max(0.0001F, smoothTime);
+    float omega = 2.0F / smoothTime;
+
+    float x = omega * deltaTime;
+    float exp = 1.0F / (1.0F + x + 0.48F * x * x + 0.235F * x * x * x);
+
+    float change_x = current.x - target.x;
+    float change_y = current.y - target.y;
+    Vec2 originalTo = target;
+
+    // Clamp maximum speed
+    float maxChange = maxSpeed * smoothTime;
+
+    float maxChangeSq = maxChange * maxChange;
+    float sqDist = change_x * change_x + change_y * change_y;
+    if (sqDist > maxChangeSq)
+    {
+        float mag = std::sqrt(sqDist);
+        change_x = change_x / mag * maxChange;
+        change_y = change_y / mag * maxChange;
+    }
+
+    target.x = current.x - change_x;
+    target.y = current.y - change_y;
+
+    float temp_x = (currentVelocity.x + omega * change_x) * deltaTime;
+    float temp_y = (currentVelocity.y + omega * change_y) * deltaTime;
+
+    currentVelocity.x = (currentVelocity.x - omega * temp_x) * exp;
+    currentVelocity.y = (currentVelocity.y - omega * temp_y) * exp;
+
+    float output_x = target.x + (change_x + temp_x) * exp;
+    float output_y = target.y + (change_y + temp_y) * exp;
+
+    // Prevent overshooting
+    float origMinusCurrent_x = originalTo.x - current.x;
+    float origMinusCurrent_y = originalTo.y - current.y;
+    float outMinusOrig_x = output_x - originalTo.x;
+    float outMinusOrig_y = output_y - originalTo.y;
+
+    if (origMinusCurrent_x * outMinusOrig_x + origMinusCurrent_y * outMinusOrig_y > 0)
+    {
+        output_x = originalTo.x;
+        output_y = originalTo.y;
+
+        currentVelocity.x = (output_x - originalTo.x) / deltaTime;
+        currentVelocity.y = (output_y - originalTo.y) / deltaTime;
+    }
+    return Vec2(output_x, output_y);
+}
+
     void PyVec2::_register(VM* vm, PyObject* mod, PyObject* type){
         PY_STRUCT_LIKE(PyVec2)
 
@@ -55,6 +110,19 @@ namespace pkpy{
             return VAR(Tuple({ VAR(self.x), VAR(self.y) }));
         });
 
+        // @staticmethod
+        vm->bind(type, "smooth_damp(current: vec2, target: vec2, current_velocity: vec2, smooth_time: float, max_speed: float, delta_time: float) -> vec2", [](VM* vm, ArgsView args){
+            Vec2 current = CAST(Vec2, args[0]);
+            Vec2 target = CAST(Vec2, args[1]);
+            PyVec2& current_velocity = CAST(PyVec2&, args[2]);
+            float smooth_time = CAST_F(args[3]);
+            float max_speed = CAST_F(args[4]);
+            float delta_time = CAST_F(args[5]);
+            Vec2 ret = SmoothDamp(current, target, current_velocity, smooth_time, max_speed, delta_time);
+            return VAR(ret);
+        });
+
+        // @staticmethod
         vm->bind(type, "angle(__from: vec2, __to: vec2) -> float", [](VM* vm, ArgsView args){
             PyVec2 __from = CAST(PyVec2, args[0]);
             PyVec2 __to = CAST(PyVec2, args[1]);
@@ -83,18 +151,6 @@ namespace pkpy{
                           0.0f, 0.0f, 1.0f);
             self = rotate.transform_vector(self);
             return VAR(self);
-        });
-
-        vm->bind_method<1>(type, "rotate_", [](VM* vm, ArgsView args){
-            Vec2& self = _CAST(PyVec2&, args[0]);
-            float radian = CAST(f64, args[1]);
-            float cr = cosf(radian);
-            float sr = sinf(radian);
-            Mat3x3 rotate(cr,   -sr,  0.0f,
-                          sr,   cr,   0.0f,
-                          0.0f, 0.0f, 1.0f);
-            self = rotate.transform_vector(self);
-            return vm->None;
         });
 
         BIND_VEC_VEC_OP(2, __add__, +)

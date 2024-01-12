@@ -22,7 +22,14 @@ namespace pkpy{
         for(PyObject* obj: _no_gc) obj->gc.marked = false;
 
         int freed = gen.size() - alive.size();
-        // std::cout << "GC: " << alive.size() << "/" << gen.size() << " (" << freed << " freed)" << std::endl;
+
+#if PK_DEBUG_GC_STATS
+        for(auto& [type, count]: deleted){
+            std::cout << "GC: " << obj_type_name(vm, type).sv() << "=" << count << std::endl;
+        }
+        std::cout << "GC: " << alive.size() << "/" << gen.size() << " (" << freed << " freed)" << std::endl;
+        deleted.clear();
+#endif
         gen.clear();
         gen.swap(alive);
         // clean up pools
@@ -36,7 +43,7 @@ namespace pkpy{
         gc_counter = 0;
         collect();
         gc_threshold = gen.size() * 2;
-        if(gc_threshold < kMinGCThreshold) gc_threshold = kMinGCThreshold;
+        if(gc_threshold < PK_GC_MIN_THRESHOLD) gc_threshold = PK_GC_MIN_THRESHOLD;
 #endif
     }
 
@@ -50,11 +57,6 @@ namespace pkpy{
     ManagedHeap::~ManagedHeap(){
         for(PyObject* obj: _no_gc) { obj->~PyObject(); pool64_dealloc(obj); }
         for(PyObject* obj: gen) { obj->~PyObject(); pool64_dealloc(obj); }
-#if PK_DEBUG_GC_STATS
-        for(auto& [type, count]: deleted){
-            std::cout << "GC: " << obj_type_name(vm, type).sv() << "=" << count << std::endl;
-        }
-#endif
     }
 
 
