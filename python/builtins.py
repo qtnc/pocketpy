@@ -265,16 +265,6 @@ def help(obj):
     print(obj.__signature__)
     print(obj.__doc__)
 
-
-class classmethod:
-    def __init__(self, f):
-        self.f = f
-        raise NotImplementedError
-
-def staticmethod(f):
-    return f
-
-
 def complex(*args, **kwargs):
     import cmath
     return cmath.complex(*args, **kwargs)

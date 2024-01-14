@@ -21,7 +21,7 @@
 #include <random>
 #include <deque>
 
-#define PK_VERSION				"1.3.7"
+#define PK_VERSION				"1.3.8"
 
 #include "config.h"
 #include "export.h"
@@ -76,7 +76,7 @@ struct NumberTraits<4> {
 
 	static constexpr int_t kMaxSmallInt = (1 << 28) - 1;
 	static constexpr int_t kMinSmallInt = - (1 << 28);
-	static constexpr float_t kEpsilon = 1e-4;
+	static constexpr float_t kEpsilon = (float_t)1e-4;
 };
 
 template <>
@@ -86,7 +86,7 @@ struct NumberTraits<8> {
 
 	static constexpr int_t kMaxSmallInt = (1ll << 60) - 1;
 	static constexpr int_t kMinSmallInt = - (1ll << 60);
-	static constexpr float_t kEpsilon = 1e-8;
+	static constexpr float_t kEpsilon = (float_t)1e-8;
 };
 
 using Number = NumberTraits<sizeof(void*)>;
