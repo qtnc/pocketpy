@@ -58,11 +58,6 @@ static_test_vec3_int = vec3(278, -13919730938747, 1364223456756456)
 assert str(static_test_vec3_float).startswith('vec3(')
 assert str(static_test_vec3_int).startswith('vec3(')
 
-# test __getnewargs__
-element_name_list = ['x', 'y', 'z']
-element_value_list = [getattr(test_vec3, attr) for attr in element_name_list]
-assert tuple(element_value_list) == test_vec3.__getnewargs__()
-
 # test copy
 element_name_list = ['x', 'y', 'z']
 element_value_list = [getattr(test_vec3, attr) for attr in element_name_list]
@@ -80,13 +75,6 @@ static_test_vec4_int = vec4(278, -13919730938747, 1364223456756456, -37)
 # test __repr__
 assert str(static_test_vec4_float).startswith('vec4(')
 assert str(static_test_vec4_int).startswith('vec4(')
-
-# test __getnewargs__
-element_name_list = ['x', 'y', 'z', 'w']
-element_value_list = [getattr(test_vec4, attr) for attr in element_name_list]
-_0 = tuple(element_value_list)
-_1 = test_vec4.__getnewargs__()
-assert (_0 == _1), (_0, _1)
 
 # test copy
 element_name_list = ['x', 'y', 'z', 'w']
@@ -341,11 +329,6 @@ test_mat_copy.determinant()
 assert str(static_test_mat_float)
 assert str(static_test_mat_int)
 
-# test __getnewargs__
-test_mat_copy = test_mat.copy()
-element_value_list = [getattr(test_mat, attr) for attr in element_name_list]
-assert tuple(element_value_list) == test_mat.__getnewargs__()
-
 # test __truediv__
 test_mat_copy = test_mat.copy()
 result_mat = test_mat_copy.__truediv__(12.345)
@@ -487,3 +470,22 @@ class mymat3x3(mat3x3):
         return _0 == _1 == _2
     
 assert mymat3x3().f()
+
+
+# test assign
+a = vec2(1, 2)
+assert a.assign(vec2(3, 4)) is None
+assert a == vec2(3, 4)
+
+b = vec3(1, 2, 3)
+assert b.assign(vec3(4, 5, 6)) is None
+assert b == vec3(4, 5, 6)
+
+c = vec4(1, 2, 3, 4)
+assert c.assign(vec4(5, 6, 7, 8)) is None
+assert c == vec4(5, 6, 7, 8)
+
+d = mat3x3.identity()
+assert d.assign(mat3x3.zeros()) is None
+assert d == mat3x3.zeros()
+

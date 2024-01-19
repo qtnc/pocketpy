@@ -27,7 +27,7 @@ namespace pkpy{
                 if(!first) ss << ", ";
                 first = false;
                 if(!is_non_tagged_type(k, vm->tp_str)){
-                    vm->TypeError(fmt("json keys must be string, got ", obj_type_name(vm, vm->_tp(k))));
+                    vm->TypeError(fmt("json keys must be string, got ", _type_name(vm, vm->_tp(k))));
                 }
                 ss << _CAST(Str&, k).escape(false) << ": ";
                 write_object(v);
@@ -56,7 +56,7 @@ namespace pkpy{
             }else if(obj_t == vm->tp_dict){
                 write_dict(_CAST(Dict&, obj));
             }else{
-                vm->TypeError(fmt("unrecognized type ", obj_type_name(vm, obj_t).escape()));
+                vm->TypeError(fmt("unrecognized type ", _type_name(vm, obj_t).escape()));
             }
         }
 
@@ -133,14 +133,13 @@ namespace pkpy{
         callstack.pop();
     }
 
-    PyObject* VM::find_name_in_mro(PyObject* cls, StrName name){
+    PyObject* VM::find_name_in_mro(Type cls, StrName name){
         PyObject* val;
         do{
-            val = cls->attr().try_get(name);
+            val = _t(cls)->attr().try_get(name);
             if(val != nullptr) return val;
-            Type base = _all_types[PK_OBJ_GET(Type, cls)].base;
-            if(base.index == -1) break;
-            cls = _all_types[base].obj;
+            cls = _all_types[cls].base;
+            if(cls.index == -1) break;
         }while(true);
         return nullptr;
     }
@@ -219,26 +218,6 @@ namespace pkpy{
     Type VM::_new_type_object(StrName name, Type base, bool subclass_enabled) {
         PyObject* obj = new_type_object(nullptr, name, base, subclass_enabled);
         return PK_OBJ_GET(Type, obj);
-    }
-
-    PyObject* VM::_find_type_object(const Str& type){
-        PyObject* obj = builtins->attr().try_get_likely_found(type);
-        if(obj == nullptr){
-            for(auto& t: _all_types) if(t.name == type) return t.obj;
-            throw std::runtime_error(fmt("type not found: ", type).str());
-        }
-        check_non_tagged_type(obj, tp_type);
-        return obj;
-    }
-
-
-    Type VM::_type(const Str& type){
-        PyObject* obj = _find_type_object(type);
-        return PK_OBJ_GET(Type, obj);
-    }
-
-    PyTypeInfo* VM::_type_info(Type type){
-        return &_all_types[type];
     }
 
     const PyTypeInfo* VM::_inst_type_info(PyObject* obj){
@@ -690,7 +669,7 @@ void VM::_log_s_data(const char* title) {
         } else if(is_type(obj, tp_tuple)){
             auto& t = CAST(Tuple&, obj);
             ss << "tuple(size=" << t.size() << ")";
-        } else ss << "(" << obj_type_name(this, obj->type) << ")";
+        } else ss << "(" << _type_name(this, obj->type) << ")";
         ss << ", ";
     }
     std::string output = ss.str();
@@ -955,7 +934,7 @@ __FAST_CALL:
     if(is_non_tagged_type(callable, tp_type)){
         if(method_call) PK_FATAL_ERROR();
         // [type, NULL, args..., kwargs...]
-        PyObject* new_f = find_name_in_mro(callable, __new__);
+        PyObject* new_f = find_name_in_mro(PK_OBJ_GET(Type, callable), __new__);
         PyObject* obj;
 #if PK_DEBUG_EXTRA_CHECK
         PK_ASSERT(new_f != nullptr);
@@ -1006,20 +985,22 @@ __FAST_CALL:
 }
 
 void VM::delattr(PyObject *_0, StrName _name){
+    const PyTypeInfo* ti = _inst_type_info(_0);
+    if(ti->m__delattr__ && ti->m__delattr__(this, _0, _name)) return;
     if(is_tagged(_0) || !_0->is_attr_valid()) TypeError("cannot delete attribute");
     if(!_0->attr().del(_name)) AttributeError(_0, _name);
 }
 
 // https://docs.python.org/3/howto/descriptor.html#invocation-from-an-instance
 PyObject* VM::getattr(PyObject* obj, StrName name, bool throw_err){
-    PyObject* objtype;
+    Type objtype(0);
     // handle super() proxy
     if(is_non_tagged_type(obj, tp_super)){
         const Super& super = PK_OBJ_GET(Super, obj);
         obj = super.first;
-        objtype = _t(super.second);
+        objtype = super.second;
     }else{
-        objtype = _t(obj);
+        objtype = _tp(obj);
     }
     PyObject* cls_var = find_name_in_mro(objtype, name);
     if(cls_var != nullptr){
@@ -1033,7 +1014,7 @@ PyObject* VM::getattr(PyObject* obj, StrName name, bool throw_err){
     if(!is_tagged(obj) && obj->is_attr_valid()){
         PyObject* val;
         if(obj->type == tp_type){
-            val = find_name_in_mro(obj, name);
+            val = find_name_in_mro(PK_OBJ_GET(Type, obj), name);
             if(val != nullptr){
                 if(is_tagged(val)) return val;
                 if(val->type == tp_staticmethod) return PK_OBJ_GET(StaticMethod, val).func;
@@ -1056,20 +1037,16 @@ PyObject* VM::getattr(PyObject* obj, StrName name, bool throw_err){
                 case tp_staticmethod.index:
                     return PK_OBJ_GET(StaticMethod, cls_var).func;
                 case tp_classmethod.index:
-                    return VAR(BoundMethod(objtype, PK_OBJ_GET(ClassMethod, cls_var).func));
+                    return VAR(BoundMethod(_t(objtype), PK_OBJ_GET(ClassMethod, cls_var).func));
             }
         }
         return cls_var;
     }
-    
-    if(is_non_tagged_type(obj, tp_module)){
-        Str path = CAST(Str&, obj->attr(__path__));
-        path = path + "." + name.sv();
-        PyObject* mod = py_import(path, false);
-        if(mod != nullptr){
-            obj->attr().set(name, mod);
-            return mod;
-        }
+
+    const PyTypeInfo* ti = &_all_types[objtype];
+    if(ti->m__getattr__){
+        PyObject* ret = ti->m__getattr__(this, obj, name);
+        if(ret) return ret;
     }
 
     if(throw_err) AttributeError(obj, name);
@@ -1080,14 +1057,14 @@ PyObject* VM::getattr(PyObject* obj, StrName name, bool throw_err){
 // try to load a unbound method (fallback to `getattr` if not found)
 PyObject* VM::get_unbound_method(PyObject* obj, StrName name, PyObject** self, bool throw_err, bool fallback){
     *self = PY_NULL;
-    PyObject* objtype;
+    Type objtype(0);
     // handle super() proxy
     if(is_non_tagged_type(obj, tp_super)){
         const Super& super = PK_OBJ_GET(Super, obj);
         obj = super.first;
-        objtype = _t(super.second);
+        objtype = super.second;
     }else{
-        objtype = _t(obj);
+        objtype = _tp(obj);
     }
     PyObject* cls_var = find_name_in_mro(objtype, name);
 
@@ -1103,7 +1080,7 @@ PyObject* VM::get_unbound_method(PyObject* obj, StrName name, PyObject** self, b
         if(!is_tagged(obj) && obj->is_attr_valid()){
             PyObject* val;
             if(obj->type == tp_type){
-                val = find_name_in_mro(obj, name);
+                val = find_name_in_mro(PK_OBJ_GET(Type, obj), name);
                 if(val != nullptr){
                     if(is_tagged(val)) return val;
                     if(val->type == tp_staticmethod) return PK_OBJ_GET(StaticMethod, val).func;
@@ -1130,25 +1107,32 @@ PyObject* VM::get_unbound_method(PyObject* obj, StrName name, PyObject** self, b
                     *self = PY_NULL;
                     return PK_OBJ_GET(StaticMethod, cls_var).func;
                 case tp_classmethod.index:
-                    *self = objtype;
+                    *self = _t(objtype);
                     return PK_OBJ_GET(ClassMethod, cls_var).func;
             }
         }
         return cls_var;
     }
+
+    const PyTypeInfo* ti = &_all_types[objtype];
+    if(fallback && ti->m__getattr__){
+        PyObject* ret = ti->m__getattr__(this, obj, name);
+        if(ret) return ret;
+    }
+
     if(throw_err) AttributeError(obj, name);
     return nullptr;
 }
 
 void VM::setattr(PyObject* obj, StrName name, PyObject* value){
-    PyObject* objtype;
+    Type objtype(0);
     // handle super() proxy
     if(is_non_tagged_type(obj, tp_super)){
         Super& super = PK_OBJ_GET(Super, obj);
         obj = super.first;
-        objtype = _t(super.second);
+        objtype = super.second;
     }else{
-        objtype = _t(obj);
+        objtype = _tp(obj);
     }
     PyObject* cls_var = find_name_in_mro(objtype, name);
     if(cls_var != nullptr){
@@ -1163,6 +1147,13 @@ void VM::setattr(PyObject* obj, StrName name, PyObject* value){
             return;
         }
     }
+
+    const PyTypeInfo* ti = &_all_types[objtype];
+    if(ti->m__setattr__){
+        ti->m__setattr__(this, obj, name, value);
+        return;
+    }
+
     // handle instance __dict__
     if(is_tagged(obj) || !obj->is_attr_valid()) TypeError("cannot set attribute");
     obj->attr().set(name, value);
@@ -1267,7 +1258,7 @@ void ManagedHeap::mark() {
     if(_gc_marker_ex) _gc_marker_ex(vm);
 }
 
-StrName obj_type_name(VM *vm, Type type){
+StrName _type_name(VM *vm, Type type){
     return vm->_all_types[type].name;
 }
 

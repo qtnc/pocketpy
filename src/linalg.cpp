@@ -105,11 +105,6 @@ static Vec2 SmoothDamp(Vec2 current, Vec2 target, PyVec2& currentVelocity, float
             return vm->heap.gcnew<PyVec2>(PK_OBJ_GET(Type, args[0]), Vec2(x, y));
         });
 
-        vm->bind_method<0>(type, "__getnewargs__", [](VM* vm, ArgsView args){
-            PyVec2& self = _CAST(PyVec2&, args[0]);
-            return VAR(Tuple({ VAR(self.x), VAR(self.y) }));
-        });
-
         // @staticmethod
         vm->bind(type, "smooth_damp(current: vec2, target: vec2, current_velocity: vec2, smooth_time: float, max_speed: float, delta_time: float) -> vec2", [](VM* vm, ArgsView args){
             Vec2 current = CAST(Vec2, args[0]);
@@ -162,6 +157,7 @@ static Vec2 SmoothDamp(Vec2 current, Vec2 target, PyVec2& currentVelocity, float
         BIND_VEC_FIELD(2, y)
         BIND_VEC_FUNCTION_1(2, dot)
         BIND_VEC_FUNCTION_1(2, cross)
+        BIND_VEC_FUNCTION_1(2, assign)
         BIND_VEC_FUNCTION_0(2, length)
         BIND_VEC_FUNCTION_0(2, length_squared)
         BIND_VEC_FUNCTION_0(2, normalize)
@@ -175,11 +171,6 @@ static Vec2 SmoothDamp(Vec2 current, Vec2 target, PyVec2& currentVelocity, float
             float y = CAST_F(args[2]);
             float z = CAST_F(args[3]);
             return vm->heap.gcnew<PyVec3>(PK_OBJ_GET(Type, args[0]), Vec3(x, y, z));
-        });
-
-        vm->bind_method<0>(type, "__getnewargs__", [](VM* vm, ArgsView args){
-            PyVec3& self = _CAST(PyVec3&, args[0]);
-            return VAR(Tuple({ VAR(self.x), VAR(self.y), VAR(self.z) }));
         });
 
         vm->bind__repr__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* obj){
@@ -200,6 +191,7 @@ static Vec2 SmoothDamp(Vec2 current, Vec2 target, PyVec2& currentVelocity, float
         BIND_VEC_FIELD(3, z)
         BIND_VEC_FUNCTION_1(3, dot)
         BIND_VEC_FUNCTION_1(3, cross)
+        BIND_VEC_FUNCTION_1(3, assign)
         BIND_VEC_FUNCTION_0(3, length)
         BIND_VEC_FUNCTION_0(3, length_squared)
         BIND_VEC_FUNCTION_0(3, normalize)
@@ -214,11 +206,6 @@ static Vec2 SmoothDamp(Vec2 current, Vec2 target, PyVec2& currentVelocity, float
             float z = CAST_F(args[3]);
             float w = CAST_F(args[4]);
             return vm->heap.gcnew<PyVec4>(PK_OBJ_GET(Type, args[0]), Vec4(x, y, z, w));
-        });
-
-        vm->bind_method<0>(type, "__getnewargs__", [](VM* vm, ArgsView args){
-            PyVec4& self = _CAST(PyVec4&, args[0]);
-            return VAR(Tuple({ VAR(self.x), VAR(self.y), VAR(self.z), VAR(self.w) }));
         });
 
         vm->bind__repr__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* obj){
@@ -239,6 +226,7 @@ static Vec2 SmoothDamp(Vec2 current, Vec2 target, PyVec2& currentVelocity, float
         BIND_VEC_FIELD(4, z)
         BIND_VEC_FIELD(4, w)
         BIND_VEC_FUNCTION_1(4, dot)
+        BIND_VEC_FUNCTION_1(4, assign)
         BIND_VEC_FUNCTION_0(4, length)
         BIND_VEC_FUNCTION_0(4, length_squared)
         BIND_VEC_FUNCTION_0(4, normalize)
@@ -272,11 +260,11 @@ static Vec2 SmoothDamp(Vec2 current, Vec2 target, PyVec2& currentVelocity, float
             return vm->None;
         });
 
-        vm->bind_method<0>(type, "__getnewargs__", [](VM* vm, ArgsView args){
+        vm->bind_method<1>(type, "assign", [](VM* vm, ArgsView args){
             PyMat3x3& self = _CAST(PyMat3x3&, args[0]);
-            Tuple t(9);
-            for(int i=0; i<9; i++) t[i] = VAR(self.v[i]);
-            return VAR(std::move(t));
+            const PyMat3x3& other = CAST(PyMat3x3&, args[1]);
+            self = other;
+            return vm->None;
         });
 
         vm->bind_method<0>(type, "set_zeros", PK_ACTION(PK_OBJ_GET(PyMat3x3, args[0]).set_zeros()));
@@ -402,7 +390,7 @@ static Vec2 SmoothDamp(Vec2 current, Vec2 target, PyVec2& currentVelocity, float
             Mat3x3 out;
             self.matmul(other, out);
             self = out;
-            return vm->None;
+            return args[0];
         });
 
         vm->bind_method<0>(type, "determinant", [](VM* vm, ArgsView args){

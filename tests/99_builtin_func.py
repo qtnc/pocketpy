@@ -95,29 +95,6 @@ try:
 except:
     pass
 
-# 无法测试 -----------------------------------------------
-#       248:  192:    _vm->bind_builtin_func<1>("__import__", [](VM* vm, ArgsView args) {
-#        67:  193:        const Str& name = CAST(Str&, args[0]);
-#        67:  194:        auto dot = name.sv().find_last_of(".");
-#        67:  195:        if(dot != std::string_view::npos){
-#     #####:  196:            auto ext = name.sv().substr(dot);
-#     #####:  197:            if(ext == ".so" || ext == ".dll" || ext == ".dylib"){
-#     #####:  198:                dylib_entry_t entry = load_dylib(name.c_str());
-#     #####:  199:                if(!entry){
-#     #####:  200:                    vm->_error("ImportError", "cannot load dynamic library: " + name.escape());
-#     #####:  201:                }
-#     #####:  202:                vm->_c.s_view.push(ArgsView(vm->s_data.end(), vm->s_data.end()));
-#     #####:  203:                const char* name = entry(vm, PK_VERSION);
-#     #####:  204:                vm->_c.s_view.pop();
-#     #####:  205:                if(name == nullptr){
-#     #####:  206:                    vm->_error("ImportError", "module initialization failed: " + Str(name).escape());
-#     #####:  207:                }
-#     #####:  208:                return vm->_modules[name];
-#     #####:  209:            }
-#     #####:  210:        }
-#        67:  211:        return vm->py_import(name);
-#        67:  212:    });
-
 # test hash:
 # 测试整数类型的输入
 assert hash(0) == 0
@@ -168,37 +145,13 @@ try:
 except:
     pass
 
-
-# -----------------------------------------------
-#       114:  259:    _vm->bind_builtin_func<1>("chr", [](VM* vm, ArgsView args) {
-#     #####:  260:        i64 i = CAST(i64, args[0]);
-#     #####:  261:        if (i < 0 || i > 128) vm->ValueError("chr() arg not in range(128)");
-#     #####:  262:        return VAR(std::string(1, (char)i));
-#     #####:  263:    });
 # test chr
 l = []
 for i in range(128):
     l.append(f'{i} {chr(i)}')
 assert l == ['0 \x00', '1 \x01', '2 \x02', '3 \x03', '4 \x04', '5 \x05', '6 \x06', '7 \x07', '8 \x08', '9 \t', '10 \n', '11 \x0b', '12 \x0c', '13 \r', '14 \x0e', '15 \x0f', '16 \x10', '17 \x11', '18 \x12', '19 \x13', '20 \x14', '21 \x15', '22 \x16', '23 \x17', '24 \x18', '25 \x19', '26 \x1a', '27 \x1b', '28 \x1c', '29 \x1d', '30 \x1e', '31 \x1f', '32  ', '33 !', '34 "', '35 #', '36 $', '37 %', '38 &', "39 '", '40 (', '41 )', '42 *', '43 +', '44 ,', '45 -', '46 .', '47 /', '48 0', '49 1', '50 2', '51 3', '52 4', '53 5', '54 6', '55 7', '56 8', '57 9', '58 :', '59 ;', '60 <', '61 =', '62 >', '63 ?', '64 @', '65 A', '66 B', '67 C', '68 D', '69 E', '70 F', '71 G', '72 H', '73 I', '74 J', '75 K', '76 L', '77 M', '78 N', '79 O', '80 P', '81 Q', '82 R', '83 S', '84 T', '85 U', '86 V', '87 W', '88 X', '89 Y', '90 Z', '91 [', '92 \\', '93 ]', '94 ^', '95 _', '96 `', '97 a', '98 b', '99 c', '100 d', '101 e', '102 f', '103 g', '104 h', '105 i', '106 j', '107 k', '108 l', '109 m', '110 n', '111 o', '112 p', '113 q', '114 r', '115 s', '116 t', '117 u', '118 v', '119 w', '120 x', '121 y', '122 z', '123 {', '124 |', '125 }', '126 ~', '127 \x7f']
 
-
 assert type(bin(1234)) is str
-
-# 无法测试, 不能覆盖-----------------------------------------------
-#       136:  285:    _vm->bind_builtin_func<1>("dir", [](VM* vm, ArgsView args) {
-#        10:  286:        std::set<StrName> names;
-#        10:  287:        if(!is_tagged(args[0]) && args[0]->is_attr_valid()){
-#     #####:  288:            std::vector<StrName> keys = args[0]->attr().keys();
-#     #####:  289:            names.insert(keys.begin(), keys.end());
-#     #####:  290:        }
-#        10:  291:        const NameDict& t_attr = vm->_t(args[0])->attr();
-#        10:  292:        std::vector<StrName> keys = t_attr.keys();
-#        10:  293:        names.insert(keys.begin(), keys.end());
-#        10:  294:        List ret;
-#       305:  295:        for (StrName name : names) ret.push_back(VAR(name.sv()));
-#        10:  296:        return VAR(std::move(ret));
-#        10:  297:    });
-# test dir:
 
 # test __repr__:
 class A():
@@ -245,31 +198,8 @@ try:
 except:
     pass
 
-# 未完全测试准确性-----------------------------------------------
-#       116:  392:    _vm->bind_method<0>("int", "bit_length", [](VM* vm, ArgsView args) {
-#     #####:  393:        i64 x = _CAST(i64, args[0]);
-#     #####:  394:        if(x < 0) x = -x;
-#         -:  395:        int bits = 0;
-#     #####:  396:        while(x){ x >>= 1; bits++; }
-#     #####:  397:        return VAR(bits);
-#         -:  398:    });
-# test int.bit_length:
-assert type(int.bit_length(100)) is int
-
-# 未完全测试准确性-----------------------------------------------
-#       116:  400:    _vm->bind__floordiv__(_vm->tp_int, [](VM* vm, PyObject* lhs_, PyObject* rhs_) {
-#     #####:  401:        i64 rhs = CAST(i64, rhs_);
-#     #####:  402:        return VAR(_CAST(i64, lhs_) / rhs);
-#         -:  403:    });
-# test int.__floordiv__:
 assert type(10//11) is int
 
-
-# 未完全测试准确性-----------------------------------------------
-#       116:  405:    _vm->bind__mod__(_vm->tp_int, [](VM* vm, PyObject* lhs_, PyObject* rhs_) {
-#     #####:  406:        i64 rhs = CAST(i64, rhs_);
-#     #####:  407:        return VAR(_CAST(i64, lhs_) % rhs);
-# test int.__mod__:
 assert type(11%2) is int
 
 try:
@@ -315,21 +245,11 @@ except:
 #     #####:  565:        return VAR(self.index(sub));
 #         -:  566:    });
 # test str.find:
-assert type('25363546'.find('63')) is int
-assert type('25363546'.find('err')) is int
+assert '25363546'.find('63') == 3
+assert '25363546'.find('err') == -1
 
 
 # /************ list ************/
-# 未完全测试准确性-----------------------------------------------
-#       174:  615:    _vm->bind_constructor<-1>("list", [](VM* vm, ArgsView args) {
-#        29:  616:        if(args.size() == 1+0) return VAR(List());
-#        29:  617:        if(args.size() == 1+1){
-#        29:  618:            return vm->py_list(args[1]);
-#         -:  619:        }
-#     #####:  620:        vm->TypeError("list() takes 0 or 1 arguments");
-#     #####:  621:        return vm->None;
-#        29:  622:    });
-# test list:
 try:
     list(1,2)
     print('未能拦截错误, 在测试 list')
@@ -432,79 +352,22 @@ try:
 except:
     pass
 
-
-# 未完全测试准确性-----------------------------------------------
-#       118:  793:    _vm->bind__contains__(_vm->tp_tuple, [](VM* vm, PyObject* obj, PyObject* item) {
-#         1:  794:        Tuple& self = _CAST(Tuple&, obj);
-#         3:  795:        for(PyObject* i: self) if(vm->py_eq(i, item)) return vm->True;
-#     #####:  796:        return vm->False;
-#         1:  797:    });
-# test tuple.__contains__:
 assert (1,2,3).__contains__(5) == False
 
-
-# 未完全测试准确性-----------------------------------------------
-#       116:  799:    _vm->bind_method<1>("tuple", "count", [](VM* vm, ArgsView args) {
-#     #####:  800:        Tuple& self = _CAST(Tuple&, args[0]);
-#         -:  801:        int count = 0;
-#     #####:  802:        for(PyObject* i: self) if(vm->py_eq(i, args[1])) count++;
-#     #####:  803:        return VAR(count);
-#         -:  804:    });
-# test tuple.count:
 assert (1,2,2,3,3,3).count(3) == 3
 assert (1,2,2,3,3,3).count(0) == 0
 
-
-# /************ bool ************/
-# -----------------------------------------------
-#       116:  842:    _vm->bind__repr__(_vm->tp_bool, [](VM* vm, PyObject* self) {
-#     #####:  843:        bool val = _CAST(bool, self);
-#     #####:  844:        return VAR(val ? "True" : "False");
-#         -:  845:    });
-# test bool.__repr__:
 assert repr(True) == 'True'
 assert repr(False) == 'False'
 
-
-# 未完全测试准确性-----------------------------------------------
-#       116:  882:    _vm->bind__and__(_vm->tp_bool, [](VM* vm, PyObject* lhs, PyObject* rhs) {
-#     #####:  883:        return VAR(_CAST(bool, lhs) && CAST(bool, rhs));
-#         -:  884:    });
-# test bool.__and__:
 assert True & True == 1
 
-# 未完全测试准确性-----------------------------------------------
-#       116:  885:    _vm->bind__or__(_vm->tp_bool, [](VM* vm, PyObject* lhs, PyObject* rhs) {
-#     #####:  886:        return VAR(_CAST(bool, lhs) || CAST(bool, rhs));
-#         -:  887:    });
-# test bool.__or__:
 assert True | True == 1
 
-# 未完全测试准确性-----------------------------------------------
-#       116:  888:    _vm->bind__xor__(_vm->tp_bool, [](VM* vm, PyObject* lhs, PyObject* rhs) {
-#     #####:  889:        return VAR(_CAST(bool, lhs) != CAST(bool, rhs));
-#         -:  890:    });
-# test bool.__xor__:
 assert (True ^ True) == 0
 
-# 未完全测试准确性-----------------------------------------------
-#       120:  891:    _vm->bind__eq__(_vm->tp_bool, [](VM* vm, PyObject* lhs, PyObject* rhs) {
-#         2:  892:        if(is_non_tagged_type(rhs, vm->tp_bool)) return VAR(lhs == rhs);
-#     #####:  893:        if(is_int(rhs)) return VAR(_CAST(bool, lhs) == (bool)CAST(i64, rhs));
-#     #####:  894:        return vm->NotImplemented;
-#         2:  895:    });
-# test bool.__eq__:
 assert (True == True) == 1
 
-
-# /************ bytes ************/
-# 未完全测试准确性-----------------------------------------------
-#       116:  922:    _vm->bind__hash__(_vm->tp_bytes, [](VM* vm, PyObject* obj) {
-#     #####:  923:        const Bytes& self = _CAST(Bytes&, obj);
-#     #####:  924:        std::string_view view(self.data(), self.size());
-#     #####:  925:        return (i64)std::hash<std::string_view>()(view);
-#     #####:  926:    });
-# test bytes.__hash__:
 assert type(hash(bytes([0x41, 0x42, 0x43]))) is int
 
 
@@ -582,12 +445,6 @@ my_mappingproxy = A().__dict__
 assert type(my_mappingproxy.values()) is list
 
 
-
-# 未完全测试准确性-----------------------------------------------
-#       116:  992:    _vm->bind__len__(_vm->tp_mappingproxy, [](VM* vm, PyObject* obj) {
-#     #####:  993:        return (i64)_CAST(MappingProxy&, obj).attr().size();
-#         -:  994:    });
-# test mappingproxy.__len__:
 class A():
     def __init__(self):
         self.a = 10
@@ -599,12 +456,6 @@ my_mappingproxy = A().__dict__
 assert type(len(my_mappingproxy)) is int
 
 
-# 未完全测试准确性-----------------------------------------------
-#       116:  996:    _vm->bind__hash__(_vm->tp_mappingproxy, [](VM* vm, PyObject* obj) {
-#     #####:  997:        vm->TypeError("unhashable type: 'mappingproxy'");
-#     #####:  998:        return (i64)0;
-#     #####:  999:    });
-# test mappingproxy.__hash__:
 class A():
     def __init__(self):
         self.a = 10
@@ -684,12 +535,6 @@ try:
 except:
     pass
 
-# 未完全测试准确性-----------------------------------------------
-#       116: 1057:    _vm->bind__hash__(_vm->tp_dict, [](VM* vm, PyObject* obj) {
-#     #####: 1058:        vm->TypeError("unhashable type: 'dict'");
-#     #####: 1059:        return (i64)0;
-#     #####: 1060:    });
-# test dict.__hash__
 try:
     hash(dict([(1,2)]))
     print('未能拦截错误, 在测试 dict.__hash__')
@@ -697,11 +542,6 @@ try:
 except:
     pass
 
-# 未完全测试准确性-----------------------------------------------
-#       116: 1093:    _vm->bind__iter__(_vm->tp_dict, [](VM* vm, PyObject* obj) {
-#     #####: 1094:        const Dict& self = _CAST(Dict&, obj);
-#     #####: 1095:        return vm->py_iter(VAR(self.keys()));
-#     #####: 1096:    });
 # test dict.__iter__
 for k in {1:2, 2:3, 3:4}:
     assert k in [1,2,3]
@@ -799,22 +639,14 @@ def aaa():
     
 assert type(timeit.timeit(aaa, 2)) is float
 
-# 未完全测试准确性-----------------------------------------------
-#       116: 1218:    _vm->bind_property(_vm->_t(_vm->tp_function), "__doc__", [](VM* vm, ArgsView args) {
-#     #####: 1219:        Function& func = _CAST(Function&, args[0]);
-#     #####: 1220:        return VAR(func.decl->docstring);
-#         -: 1221:    });
+
 # function.__doc__
 def aaa():
     '12345'
     pass
 assert type(aaa.__doc__) is str
 
-# 未完全测试准确性-----------------------------------------------
-#       116: 1229:    _vm->bind_property(_vm->_t(_vm->tp_function), "__signature__", [](VM* vm, ArgsView args) {
-#     #####: 1230:        Function& func = _CAST(Function&, args[0]);
-#     #####: 1231:        return VAR(func.decl->signature);
-#         -: 1232:    });
+
 # function.__signature__
 def aaa():
     pass
