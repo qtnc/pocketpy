@@ -308,7 +308,6 @@ return;
 }
 else if (match(TK(","))) exprTuple();
         consume(TK(")"));
-            match_newlines_repl();
         if(ctx()->s_expr.top()->is_tuple()) return;
         Expr_ g = make_expr<GroupedExpr>(ctx()->s_expr.popx());
         ctx()->s_expr.push(std::move(g));
