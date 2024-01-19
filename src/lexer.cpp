@@ -343,8 +343,14 @@ static bool is_unicode_Lo_char(uint32_t c) {
                     return true;
                 }
                 case '%': add_token_2('=', TK("%"), TK("%=")); return true;
-                case '&': add_token_2('=', TK("&"), TK("&=")); return true;
-                case '|': add_token_2('=', TK("|"), TK("|=")); return true;
+                case '&': 
+if (matchchar('&')) add_token(TK("and"));
+else add_token_2('=', TK("&"), TK("&=")); 
+return true;
+                case '|': 
+if (matchchar('|')) add_token(TK("or"));
+else add_token_2('=', TK("|"), TK("|=")); 
+return true;
                 case '^': add_token_2('=', TK("^"), TK("^=")); return true;
                 case '.': {
                     if(matchchar('.')) {
@@ -393,10 +399,9 @@ static bool is_unicode_Lo_char(uint32_t c) {
                     }
                     return true;
                 }
-                case '!':
-                    if(matchchar('=')) add_token(TK("!="));
-                    else SyntaxError("expected '=' after '!'");
-                    break;
+                case '!': 
+add_token_2('=', TK("not"), TK("!=")); 
+                    return true;
                 case '*':
                     if (matchchar('*')) {
                         add_token(TK("**"));  // '**'
