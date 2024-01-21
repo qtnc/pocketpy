@@ -297,15 +297,14 @@ namespace pkpy{
     void Compiler::exprGroup(){
 int prev_i = i;
         match_newlines_repl();
-        EXPR();
+        EXPR_TUPLE();   // () is just for change precedence
         match_newlines_repl();
-        if(match(TK("for"))) {
+        if(match(TK("for")) && !ctx()->s_expr.top()->is_tuple()) {
 exprGenComp(prev_i);
         match_newlines_repl();
         consume(TK(")"));
 return;
 }
-else if (match(TK(","))) exprTuple();
         consume(TK(")"));
         if(ctx()->s_expr.top()->is_tuple()) return;
         Expr_ g = make_expr<GroupedExpr>(ctx()->s_expr.popx());
