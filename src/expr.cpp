@@ -546,28 +546,24 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
 
     void AttribExpr::emit_(CodeEmitContext* ctx){
         a->emit_(ctx);
-        int index = StrName(b).index;
-        ctx->emit_(OP_LOAD_ATTR, index, line);
+        ctx->emit_(OP_LOAD_ATTR, b.index, line);
     }
 
     bool AttribExpr::emit_del(CodeEmitContext* ctx) {
         a->emit_(ctx);
-        int index = StrName(b).index;
-        ctx->emit_(OP_DELETE_ATTR, index, line);
+        ctx->emit_(OP_DELETE_ATTR, b.index, line);
         return true;
     }
 
     bool AttribExpr::emit_store(CodeEmitContext* ctx){
         a->emit_(ctx);
-        int index = StrName(b).index;
-        ctx->emit_(OP_STORE_ATTR, index, line);
+        ctx->emit_(OP_STORE_ATTR, b.index, line);
         return true;
     }
 
     void AttribExpr::emit_method(CodeEmitContext* ctx) {
         a->emit_(ctx);
-        int index = StrName(b).index;
-        ctx->emit_(OP_LOAD_METHOD, index, line);
+        ctx->emit_(OP_LOAD_METHOD, b.index, line);
     }
 
     void CallExpr::emit_(CodeEmitContext* ctx) {

@@ -147,6 +147,9 @@ public:
     PyObject* _last_exception;  // last exception
     PyObject* _curr_class;      // current class being defined
 
+    // this is for repr() recursion detection (no need to mark)
+    std::set<PyObject*> _repr_recursion_set;
+
     // cached code objects for FSTRING_EVAL
     std::map<std::string_view, CodeObject_> _cached_codes;
 
@@ -288,31 +291,9 @@ public:
 
 #undef BIND_BINARY_SPECIAL
 
-    void bind__getitem__(Type type, PyObject* (*f)(VM*, PyObject*, PyObject*)){
-        _all_types[type].m__getitem__ = f;
-        PyObject* nf = bind_method<1>(type, "__getitem__", [](VM* vm, ArgsView args){
-            return lambda_get_userdata<PyObject*(*)(VM*, PyObject*, PyObject*)>(args.begin())(vm, args[0], args[1]);
-        });
-        PK_OBJ_GET(NativeFunc, nf).set_userdata(f);
-    }
-
-    void bind__setitem__(Type type, void (*f)(VM*, PyObject*, PyObject*, PyObject*)){
-        _all_types[type].m__setitem__ = f;
-        PyObject* nf = bind_method<2>(type, "__setitem__", [](VM* vm, ArgsView args){
-            lambda_get_userdata<void(*)(VM* vm, PyObject*, PyObject*, PyObject*)>(args.begin())(vm, args[0], args[1], args[2]);
-            return vm->None;
-        });
-        PK_OBJ_GET(NativeFunc, nf).set_userdata(f);
-    }
-
-    void bind__delitem__(Type type, void (*f)(VM*, PyObject*, PyObject*)){
-        _all_types[type].m__delitem__ = f;
-        PyObject* nf = bind_method<1>(type, "__delitem__", [](VM* vm, ArgsView args){
-            lambda_get_userdata<void(*)(VM*, PyObject*, PyObject*)>(args.begin())(vm, args[0], args[1]);
-            return vm->None;
-        });
-        PK_OBJ_GET(NativeFunc, nf).set_userdata(f);
-    }
+    void bind__getitem__(Type type, PyObject* (*f)(VM*, PyObject*, PyObject*));
+    void bind__setitem__(Type type, void (*f)(VM*, PyObject*, PyObject*, PyObject*));
+    void bind__delitem__(Type type, void (*f)(VM*, PyObject*, PyObject*));
 
     bool py_eq(PyObject* lhs, PyObject* rhs);
     // new in v1.2.9
@@ -331,8 +312,7 @@ public:
     template<typename T, typename __T>
     PyObject* bind_default_constructor(__T&& type) {
         return bind_constructor<1>(std::forward<__T>(type), [](VM* vm, ArgsView args){
-            Type t = PK_OBJ_GET(Type, args[0]);
-            return vm->heap.gcnew<T>(t, T());
+            return vm->heap.gcnew<T>(PK_OBJ_GET(Type, args[0]), T());
         });
     }
 
@@ -367,32 +347,31 @@ public:
     void NameError(StrName name){ _builtin_error("NameError", fmt("name ", name.escape() + " is not defined")); }
     void UnboundLocalError(StrName name){ _builtin_error("UnboundLocalError", fmt("local variable ", name.escape() + " referenced before assignment")); }
     void KeyError(PyObject* obj){ _builtin_error("KeyError", obj); }
-    void BinaryOptError(const char* op) { TypeError(fmt("unsupported operand type(s) for ", op)); }
     void ImportError(const Str& msg){ _builtin_error("ImportError", msg); }
 
+    void BinaryOptError(const char* op, PyObject* _0, PyObject* _1) {
+        StrName name_0 = _type_name(vm, _tp(_0));
+        StrName name_1 = _type_name(vm, _tp(_1));
+        TypeError(fmt("unsupported operand type(s) for ", op, ": ", name_0.escape(), " and ", name_1.escape()));
+    }
+
     void AttributeError(PyObject* obj, StrName name){
-        // OBJ_NAME calls getattr, which may lead to a infinite recursion
         if(isinstance(obj, vm->tp_type)){
-            _builtin_error("AttributeError", fmt("type object ", OBJ_NAME(obj).escape(), " has no attribute ", name.escape()));
+            _builtin_error("AttributeError", fmt("type object ", _type_name(vm, PK_OBJ_GET(Type, obj)).escape(), " has no attribute ", name.escape()));
         }else{
-            _builtin_error("AttributeError", fmt(OBJ_NAME(_t(obj)).escape(), " object has no attribute ", name.escape()));
+            _builtin_error("AttributeError", fmt(_type_name(vm, _tp(obj)).escape(), " object has no attribute ", name.escape()));
         }
     }
     void AttributeError(const Str& msg){ _builtin_error("AttributeError", msg); }
 
     void check_type(PyObject* obj, Type type){
         if(is_type(obj, type)) return;
-        TypeError("expected " + OBJ_NAME(_t(type)).escape() + ", got " + OBJ_NAME(_t(obj)).escape());
-    }
-
-    void check_args_size(int size, int min_size, int max_size){
-        if(size >= min_size && size <= max_size) return;
-        TypeError(fmt("expected ", min_size, "-", max_size, " arguments, got ", size));
+        TypeError("expected " + _type_name(vm, type).escape() + ", got " + _type_name(vm, _tp(obj)).escape());
     }
 
     void check_non_tagged_type(PyObject* obj, Type type){
         if(is_non_tagged_type(obj, type)) return;
-        TypeError("expected " + OBJ_NAME(_t(type)).escape() + ", got " + OBJ_NAME(_t(obj)).escape());
+        TypeError("expected " + _type_name(vm, type).escape() + ", got " + _type_name(vm, _tp(obj)).escape());
     }
 
     PyObject* _t(Type t){
@@ -517,7 +496,7 @@ template<> inline float py_cast<float>(VM* vm, PyObject* obj){
     if(is_float(obj)) return untag_float(obj);
     i64 bits;
     if(try_cast_int(obj, &bits)) return (float)bits;
-    vm->TypeError("expected 'int' or 'float', got " + OBJ_NAME(vm->_t(obj)).escape());
+    vm->TypeError("expected 'int' or 'float', got " + _type_name(vm, vm->_tp(obj)).escape());
     return 0;
 }
 template<> inline float _py_cast<float>(VM* vm, PyObject* obj){
@@ -527,7 +506,7 @@ template<> inline double py_cast<double>(VM* vm, PyObject* obj){
     if(is_float(obj)) return untag_float(obj);
     i64 bits;
     if(try_cast_int(obj, &bits)) return (float)bits;
-    vm->TypeError("expected 'int' or 'float', got " + OBJ_NAME(vm->_t(obj)).escape());
+    vm->TypeError("expected 'int' or 'float', got " + _type_name(vm, vm->_tp(obj)).escape());
     return 0;
 }
 template<> inline double _py_cast<double>(VM* vm, PyObject* obj){

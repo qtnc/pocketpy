@@ -1,5 +1,4 @@
 #include "pocketpy/vm.h"
-#include "pocketpy/config.h"
 
 namespace pkpy{
 
@@ -116,7 +115,7 @@ namespace pkpy{
         PyObject* self;
         PyObject* iter_f = get_unbound_method(obj, __iter__, &self, false);
         if(self != PY_NULL) return call_method(self, iter_f);
-        TypeError(OBJ_NAME(_t(obj)).escape() + " object is not iterable");
+        TypeError(_type_name(vm, _tp(obj)).escape() + " object is not iterable");
         return nullptr;
     }
 
@@ -145,8 +144,7 @@ namespace pkpy{
     }
 
     bool VM::isinstance(PyObject* obj, Type base){
-        Type obj_t = PK_OBJ_GET(Type, _t(obj));
-        return issubclass(obj_t, base);
+        return issubclass(_tp(obj), base);
     }
 
     bool VM::issubclass(Type cls, Type base){
@@ -510,8 +508,9 @@ PyObject* VM::_format_string(Str spec, PyObject* obj){
     if(type == 'f'){
         f64 val = CAST(f64, obj);
         if(precision < 0) precision = 6;
-        std::stringstream ss; // float
-        ss << std::fixed << std::setprecision(precision) << val;
+        SStream ss;
+        ss.setprecision(precision);
+        ss << val;
         ret = ss.str();
     }else if(type == 'd'){
         ret = std::to_string(CAST(i64, obj));
@@ -712,6 +711,10 @@ void VM::init_builtin_types(){
     if(tp_staticmethod != _new_type_object("staticmethod")) exit(-3);
     if(tp_classmethod != _new_type_object("classmethod")) exit(-3);
 
+    // SyntaxError and IndentationError must be created here
+    Type tp_syntax_error = _new_type_object("SyntaxError", tp_exception, true);
+    Type tp_indentation_error = _new_type_object("IndentationError", tp_syntax_error, true);
+
     this->None = heap._new<Dummy>(_new_type_object("NoneType"));
     this->NotImplemented = heap._new<Dummy>(_new_type_object("NotImplementedType"));
     this->Ellipsis = heap._new<Dummy>(_new_type_object("ellipsis"));
@@ -738,6 +741,8 @@ void VM::init_builtin_types(){
     builtins->attr().set("NotImplemented", NotImplemented);
     builtins->attr().set("slice", _t(tp_slice));
     builtins->attr().set("Exception", _t(tp_exception));
+    builtins->attr().set("SyntaxError", _t(tp_syntax_error));
+    builtins->attr().set("IndentationError", _t(tp_indentation_error));
 
     post_init();
     this->_main = new_module("__main__");
@@ -980,7 +985,7 @@ __FAST_CALL:
         // [call_f, self, args..., kwargs...]
         return vectorcall(ARGC, KWARGC, false);
     }
-    TypeError(OBJ_NAME(_t(callable)).escape() + " object is not callable");
+    TypeError(_type_name(vm, _tp(callable)).escape() + " object is not callable");
     PK_UNREACHABLE()
 }
 
@@ -1167,7 +1172,7 @@ PyObject* VM::bind(PyObject* obj, const char* sig, const char* docstring, Native
     CodeObject_ co;
     try{
         // fn(a, b, *c, d=1) -> None
-        co = compile("def " + Str(sig) + " : pass", "<bind>", EXEC_MODE);
+        co = compile(fmt("def ", sig, " : pass"), "<bind>", EXEC_MODE);
     }catch(const Exception&){
         throw std::runtime_error("invalid signature: " + std::string(sig));
     }
@@ -1262,6 +1267,32 @@ StrName _type_name(VM *vm, Type type){
     return vm->_all_types[type].name;
 }
 
+
+void VM::bind__getitem__(Type type, PyObject* (*f)(VM*, PyObject*, PyObject*)){
+    _all_types[type].m__getitem__ = f;
+    PyObject* nf = bind_method<1>(type, "__getitem__", [](VM* vm, ArgsView args){
+        return lambda_get_userdata<PyObject*(*)(VM*, PyObject*, PyObject*)>(args.begin())(vm, args[0], args[1]);
+    });
+    PK_OBJ_GET(NativeFunc, nf).set_userdata(f);
+}
+
+void VM::bind__setitem__(Type type, void (*f)(VM*, PyObject*, PyObject*, PyObject*)){
+    _all_types[type].m__setitem__ = f;
+    PyObject* nf = bind_method<2>(type, "__setitem__", [](VM* vm, ArgsView args){
+        lambda_get_userdata<void(*)(VM* vm, PyObject*, PyObject*, PyObject*)>(args.begin())(vm, args[0], args[1], args[2]);
+        return vm->None;
+    });
+    PK_OBJ_GET(NativeFunc, nf).set_userdata(f);
+}
+
+void VM::bind__delitem__(Type type, void (*f)(VM*, PyObject*, PyObject*)){
+    _all_types[type].m__delitem__ = f;
+    PyObject* nf = bind_method<1>(type, "__delitem__", [](VM* vm, ArgsView args){
+        lambda_get_userdata<void(*)(VM*, PyObject*, PyObject*)>(args.begin())(vm, args[0], args[1]);
+        return vm->None;
+    });
+    PK_OBJ_GET(NativeFunc, nf).set_userdata(f);
+}
 
 void VM::bind__hash__(Type type, i64 (*f)(VM*, PyObject*)){
     PyObject* obj = _t(type);

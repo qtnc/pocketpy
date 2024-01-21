@@ -9,8 +9,6 @@ extern struct IOHandler *_default_io_handler;
     void add_module_io(VM* vm);
 }
 
-#if PK_ENABLE_OS
-
 #include <cstdio>
 
 namespace pkpy{
@@ -32,6 +30,8 @@ virtual bool mkdir (const std::string& name) = 0;
 virtual bool rmdir (const std::string& path) = 0;
 };
 
+#if PK_ENABLE_OS
+
 struct FileIO {
     PY_CLASS(FileIO, io, FileIO)
 
@@ -45,5 +45,6 @@ struct FileIO {
     static void _register(VM* vm, PyObject* mod, PyObject* type);
 };
 
-} // namespace pkpy
 #endif
+
+} // namespace pkpy

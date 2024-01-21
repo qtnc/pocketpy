@@ -72,11 +72,11 @@ namespace pkpy{
         count += 1;
 // http://journal.stuffwithstuff.com/2011/03/19/pratt-parsers-expression-parsing-made-easy/
 #define PK_METHOD(name) &Compiler::name
-#define PK_NO_INFIX nullptr, PREC_NONE
+#define PK_NO_INFIX nullptr, PREC_LOWEST
         for(TokenIndex i=0; i<kTokenCount; i++) rules[i] = { nullptr, PK_NO_INFIX };
-        rules[TK(".")] =        { nullptr,                  PK_METHOD(exprAttrib),         PREC_ATTRIB };
-        rules[TK("(")] =        { PK_METHOD(exprGroup),     PK_METHOD(exprCall),           PREC_CALL };
-        rules[TK("[")] =        { PK_METHOD(exprList),      PK_METHOD(exprSubscr),         PREC_SUBSCRIPT };
+        rules[TK(".")] =        { nullptr,                  PK_METHOD(exprAttrib),         PREC_PRIMARY };
+        rules[TK("(")] =        { PK_METHOD(exprGroup),     PK_METHOD(exprCall),           PREC_PRIMARY };
+        rules[TK("[")] =        { PK_METHOD(exprList),      PK_METHOD(exprSubscr),         PREC_PRIMARY };
         rules[TK("{")] =        { PK_METHOD(exprMap),       PK_NO_INFIX };
         rules[TK("%")] =        { nullptr,                  PK_METHOD(exprBinaryOp),       PREC_FACTOR };
         rules[TK("+")] =        { nullptr,                  PK_METHOD(exprBinaryOp),       PREC_TERM };
@@ -101,7 +101,6 @@ namespace pkpy{
         rules[TK("^")] =        { nullptr,               PK_METHOD(exprBinaryOp),       PREC_BITWISE_XOR };
         rules[TK("@")] =        { nullptr,               PK_METHOD(exprBinaryOp),       PREC_FACTOR };
         rules[TK("if")] =       { nullptr,               PK_METHOD(exprTernary),        PREC_TERNARY };
-        rules[TK(",")] =        { nullptr,               PK_METHOD(exprTuple),          PREC_TUPLE };
         rules[TK("not in")] =   { nullptr,               PK_METHOD(exprBinaryOp),       PREC_COMPARISION };
         rules[TK("is not")] =   { nullptr,               PK_METHOD(exprBinaryOp),       PREC_COMPARISION };
         rules[TK("and") ] =     { nullptr,               PK_METHOD(exprAnd),            PREC_LOGICAL_AND };
@@ -119,6 +118,8 @@ namespace pkpy{
         rules[TK("@long")] =    { PK_METHOD(exprLong),      PK_NO_INFIX };
         rules[TK("@imag")] =    { PK_METHOD(exprImag),      PK_NO_INFIX };
         rules[TK("@bytes")] =   { PK_METHOD(exprBytes),     PK_NO_INFIX };
+        rules[TK(":")] =        { PK_METHOD(exprSlice0),    PK_METHOD(exprSlice1),      PREC_PRIMARY };
+        
 #undef PK_METHOD
 #undef PK_NO_INFIX
     }
@@ -164,12 +165,24 @@ namespace pkpy{
         if (!match_end_stmt()) SyntaxError("expected statement end");
     }
 
-    void Compiler::EXPR(bool push_stack) {
-        parse_expression(PREC_TUPLE+1, push_stack);
+    void Compiler::EXPR() {
+        parse_expression(PREC_LOWEST+1);
     }
 
-    void Compiler::EXPR_TUPLE(bool push_stack) {
-        parse_expression(PREC_TUPLE, push_stack);
+    void Compiler::EXPR_TUPLE(bool allow_slice) {
+        parse_expression(PREC_LOWEST+1, allow_slice);
+        if(!match(TK(","))) return;
+        // tuple expression
+        std::vector<Expr_> items;
+        items.push_back(ctx()->s_expr.popx());
+        do {
+            if(curr().brackets_level) match_newlines_repl();
+            if(!is_expression(allow_slice)) break;
+            parse_expression(PREC_LOWEST+1, allow_slice);
+            items.push_back(ctx()->s_expr.popx());
+            if(curr().brackets_level) match_newlines_repl();
+        } while(match(TK(",")));
+        ctx()->s_expr.push(make_expr<TupleExpr>(std::move(items)));
     }
 
     // special case for `for loop` and `comp`
@@ -211,25 +224,11 @@ namespace pkpy{
             consume(TK(":"));
         }
         // https://github.com/blueloveTH/pocketpy/issues/37
-        parse_expression(PREC_LAMBDA + 1, false);
+        parse_expression(PREC_LAMBDA + 1);
+        ctx()->emit_expr();
         ctx()->emit_(OP_RETURN_VALUE, BC_NOARG, BC_KEEPLINE);
         pop_context();
         ctx()->s_expr.push(std::move(e));
-    }
-
-    void Compiler::exprTuple(){
-        std::vector<Expr_> items;
-        items.push_back(ctx()->s_expr.popx());
-        do {
-            if(curr().brackets_level) match_newlines_repl();
-            if(!is_expression()) break;
-            EXPR();
-            items.push_back(ctx()->s_expr.popx());
-            if(curr().brackets_level) match_newlines_repl();
-        } while(match(TK(",")));
-        ctx()->s_expr.push(make_expr<TupleExpr>(
-            std::move(items)
-        ));
     }
 
     void Compiler::exprOr(){
@@ -449,75 +448,55 @@ exprGenComp(prev_i);
     void Compiler::exprAttrib() {
         consume(TK("@id"));
         ctx()->s_expr.push(
-            make_expr<AttribExpr>(ctx()->s_expr.popx(), prev().str())
+            make_expr<AttribExpr>(ctx()->s_expr.popx(), StrName::get(prev().sv()))
         );
+    }
+
+    void Compiler::exprSlice0() {
+        auto slice = make_expr<SliceExpr>();
+        if(is_expression()){        // :<stop>
+            EXPR();
+            slice->stop = ctx()->s_expr.popx();
+            // try optional step
+            if(match(TK(":"))){     // :<stop>:<step>
+                EXPR();
+                slice->step = ctx()->s_expr.popx();
+            }
+        }else if(match(TK(":"))){
+            if(is_expression()){    // ::<step>
+                EXPR();
+                slice->step = ctx()->s_expr.popx();
+            }   // else ::
+        }   // else :
+        ctx()->s_expr.push(std::move(slice));
+    }
+
+    void Compiler::exprSlice1() {
+        auto slice = make_expr<SliceExpr>();
+        slice->start = ctx()->s_expr.popx();
+        if(is_expression()){        // <start>:<stop>
+            EXPR();
+            slice->stop = ctx()->s_expr.popx();
+            // try optional step
+            if(match(TK(":"))){     // <start>:<stop>:<step>
+                EXPR();
+                slice->step = ctx()->s_expr.popx();
+            }
+        }else if(match(TK(":"))){   // <start>::<step>
+            EXPR();
+            slice->step = ctx()->s_expr.popx();
+        }   // else <start>:
+        ctx()->s_expr.push(std::move(slice));
     }
     
     void Compiler::exprSubscr() {
         auto e = make_expr<SubscrExpr>();
-        e->a = ctx()->s_expr.popx();
-        auto slice = make_expr<SliceExpr>();
-        bool is_slice = false;
-        // a[<0> <state:1> : state<3> : state<5>]
-        int state = 0;
-        do{
-            match_newlines_repl();
-            switch(state){
-                case 0:
-                    if(match(TK(":"))){
-                        is_slice=true;
-                        state=2;
-                        break;
-                    }
-                    if(match(TK("]"))) SyntaxError();
-                    EXPR_TUPLE();
-                    slice->start = ctx()->s_expr.popx();
-                    state=1;
-                    break;
-                case 1:
-                    if(match(TK(":"))){
-                        is_slice=true;
-                        state=2;
-                        break;
-                    }
-                    if(match(TK("]"))) goto __SUBSCR_END;
-                    SyntaxError("expected ':' or ']'");
-                    break;
-                case 2:
-                    if(match(TK(":"))){
-                        state=4;
-                        break;
-                    }
-                    if(match(TK("]"))) goto __SUBSCR_END;
-                    EXPR_TUPLE();
-                    slice->stop = ctx()->s_expr.popx();
-                    state=3;
-                    break;
-                case 3:
-                    if(match(TK(":"))){
-                        state=4;
-                        break;
-                    }
-                    if(match(TK("]"))) goto __SUBSCR_END;
-                    SyntaxError("expected ':' or ']'");
-                    break;
-                case 4:
-                    if(match(TK("]"))) goto __SUBSCR_END;
-                    EXPR_TUPLE();
-                    slice->step = ctx()->s_expr.popx();
-                    state=5;
-                    break;
-                case 5: consume(TK("]")); goto __SUBSCR_END;
-            }
-            match_newlines_repl();
-        }while(true);
-__SUBSCR_END:
-        if(is_slice){
-            e->b = std::move(slice);
-        }else{
-            PK_ASSERT(state == 1)
-            e->b = std::move(slice->start);
-        }
+        match_newlines_repl();
+        e->a = ctx()->s_expr.popx();        // a
+        EXPR_TUPLE(true);
+        e->b = ctx()->s_expr.popx();        // a[<expr>]
+        match_newlines_repl();
+        consume(TK("]"));
         ctx()->s_expr.push(std::move(e));
     }
 
@@ -628,28 +607,30 @@ __EAT_DOTS_END:
         consume_end_stmt();
     }
 
-    bool Compiler::is_expression(){
+    bool Compiler::is_expression(bool allow_slice){
         PrattCallback prefix = rules[curr().type].prefix;
-        return prefix != nullptr;
+        return prefix != nullptr && (allow_slice || curr().type!=TK(":"));
     }
 
-    void Compiler::parse_expression(int precedence, bool push_stack) {
+    void Compiler::parse_expression(int precedence, bool allow_slice) {
         PrattCallback prefix = rules[curr().type].prefix;
-        if (prefix == nullptr) SyntaxError(Str("expected an expression, got ") + TK_STR(curr().type));
+        if (prefix==nullptr || (curr().type==TK(":") && !allow_slice)){
+            SyntaxError(Str("expected an expression, got ") + TK_STR(curr().type));
+        }
         advance();
         (this->*prefix)();
-        while (rules[curr().type].precedence >= precedence) {
+        while (rules[curr().type].precedence >= precedence && (allow_slice || curr().type!=TK(":"))) {
             TokenIndex op = curr().type;
             advance();
             PrattCallback infix = rules[op].infix;
             PK_ASSERT(infix != nullptr);
             (this->*infix)();
         }
-        if(!push_stack) ctx()->emit_expr();
     }
 
     void Compiler::compile_if_stmt() {
-        EXPR(false);   // condition
+        EXPR();   // condition
+        ctx()->emit_expr();
         int patch = ctx()->emit_(OP_POP_JUMP_IF_FALSE, BC_NOARG, prev().line);
         compile_block_body();
         if (match(TK("elif"))) {
@@ -669,7 +650,8 @@ __EAT_DOTS_END:
 
     void Compiler::compile_while_loop() {
         CodeBlock* block = ctx()->enter_block(CodeBlockType::WHILE_LOOP);
-        EXPR(false);   // condition
+        EXPR();   // condition
+        ctx()->emit_expr();
         int patch = ctx()->emit_(OP_POP_JUMP_IF_FALSE, BC_NOARG, prev().line);
         compile_block_body();
         ctx()->emit_(OP_LOOP_CONTINUE, ctx()->get_loop(), BC_KEEPLINE);
@@ -685,7 +667,7 @@ __EAT_DOTS_END:
     void Compiler::compile_for_loop() {
         Expr_ vars = EXPR_VARS();
         consume(TK("in"));
-        EXPR_TUPLE(false);
+        EXPR_TUPLE(); ctx()->emit_expr();
         ctx()->emit_(OP_GET_ITER, BC_NOARG, BC_KEEPLINE);
         CodeBlock* block = ctx()->enter_block(CodeBlockType::FOR_LOOP);
         ctx()->emit_(OP_FOR_ITER, BC_NOARG, BC_KEEPLINE);
@@ -715,7 +697,8 @@ __EAT_DOTS_END:
                 StrName as_name;
                 consume(TK("except"));
                 if(is_expression()){
-                    EXPR(false);      // push assumed type on to the stack
+                    EXPR();      // push assumed type on to the stack
+                    ctx()->emit_expr();
                     ctx()->emit_(OP_EXCEPTION_MATCH, BC_NOARG, prev().line);
                     if(match(TK("as"))){
                         consume(TK("@id"));
@@ -836,7 +819,7 @@ __EAT_DOTS_END:
                 break;
             case TK("yield"): 
                 if (contexts.size() <= 1) SyntaxError("'yield' outside function");
-                EXPR_TUPLE(false);
+                EXPR_TUPLE(); ctx()->emit_expr();
                 // if yield present, mark the function as generator
                 ctx()->co->is_generator = true;
                 ctx()->emit_(OP_YIELD_VALUE, BC_NOARG, kw_line);
@@ -844,7 +827,7 @@ __EAT_DOTS_END:
                 break;
             case TK("yield from"):
                 if (contexts.size() <= 1) SyntaxError("'yield from' outside function");
-                EXPR_TUPLE(false);
+                EXPR_TUPLE(); ctx()->emit_expr();
                 // if yield from present, mark the function as generator
                 ctx()->co->is_generator = true;
                 ctx()->emit_(OP_GET_ITER, BC_NOARG, kw_line);
@@ -860,7 +843,7 @@ __EAT_DOTS_END:
                 if(match_end_stmt()){
                     ctx()->emit_(OP_RETURN_VALUE, 1, kw_line);
                 }else{
-                    EXPR_TUPLE(false);
+                    EXPR_TUPLE(); ctx()->emit_expr();
                     // check if it is a generator
                     if(ctx()->co->is_generator) SyntaxError("'return' with argument inside generator function");
                     consume_end_stmt();
@@ -912,11 +895,13 @@ __EAT_DOTS_END:
                 break;
             }
             case TK("assert"):{
-                EXPR(false);    // condition
+                EXPR();    // condition
+                ctx()->emit_expr();
                 int index = ctx()->emit_(OP_POP_JUMP_IF_TRUE, BC_NOARG, kw_line);
                 int has_msg = 0;
                 if(match(TK(","))){
-                    EXPR(false);    // message
+                    EXPR();    // message
+                    ctx()->emit_expr();
                     has_msg = 1;
                 }
                 ctx()->emit_(OP_RAISE_ASSERT, has_msg, kw_line);
@@ -932,7 +917,7 @@ __EAT_DOTS_END:
                 consume_end_stmt();
                 break;
             case TK("raise"): {
-                EXPR(false);
+                EXPR(); ctx()->emit_expr();
                 ctx()->emit_(OP_RAISE, BC_NOARG, kw_line);
                 consume_end_stmt();
             } break;
@@ -944,7 +929,8 @@ __EAT_DOTS_END:
                 consume_end_stmt();
             } break;
             case TK("with"): {
-                EXPR(false);    // [ <expr> ]
+                EXPR();    // [ <expr> ]
+                ctx()->emit_expr();
                 ctx()->enter_block(CodeBlockType::CONTEXT_MANAGER);
                 Expr_ as_name;
                 if(match(TK("as"))){
@@ -1231,7 +1217,7 @@ __EAT_DOTS_END:
         match_newlines();   // skip possible leading '\n'
 
         if(mode()==EVAL_MODE) {
-            EXPR_TUPLE(false);
+            EXPR_TUPLE(); ctx()->emit_expr();
             consume(TK("@eof"));
             ctx()->emit_(OP_RETURN_VALUE, BC_NOARG, BC_KEEPLINE);
             pop_context();

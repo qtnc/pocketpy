@@ -533,17 +533,6 @@ assert v.x == 0
 v.x = 10
 assert v.x == 10
 
-# /************ module timeit ************/
-import timeit
-
-def aaa():
-    for i in range(10):
-        for j in range(10):
-            pass
-    
-assert type(timeit.timeit(aaa, 2)) is float
-
-
 # function.__doc__
 def aaa():
     '12345'
@@ -559,17 +548,6 @@ assert type(aaa.__signature__) is str
 
 # /************ module time ************/
 import time
-# 未完全测试准确性-----------------------------------------------
-#       116: 1267:    vm->bind_func<1>(mod, "sleep", [](VM* vm, ArgsView args) {
-#     #####: 1268:        f64 seconds = CAST_F(args[0]);
-#     #####: 1269:        auto begin = std::chrono::system_clock::now();
-#     #####: 1270:        while(true){
-#     #####: 1271:            auto now = std::chrono::system_clock::now();
-#     #####: 1272:            f64 elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - begin).count() / 1000.0;
-#     #####: 1273:            if(elapsed >= seconds) break;
-#     #####: 1274:        }
-#     #####: 1275:        return vm->None;
-#     #####: 1276:    });
 # test time.time
 assert type(time.time()) is float
 
@@ -584,38 +562,8 @@ assert type(local_t.tm_wday) is int
 assert type(local_t.tm_yday) is int
 assert type(local_t.tm_isdst) is int
 
-# 未完全测试准确性-----------------------------------------------
-#       116: 1267:    vm->bind_func<1>(mod, "sleep", [](VM* vm, ArgsView args) {
-#     #####: 1268:        f64 seconds = CAST_F(args[0]);
-#     #####: 1269:        auto begin = std::chrono::system_clock::now();
-#     #####: 1270:        while(true){
-#     #####: 1271:            auto now = std::chrono::system_clock::now();
-#     #####: 1272:            f64 elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - begin).count() / 1000.0;
-#     #####: 1273:            if(elapsed >= seconds) break;
-#     #####: 1274:        }
-#     #####: 1275:        return vm->None;
-#     #####: 1276:    });
 # test time.sleep
 time.sleep(0.1)
-
-# 未完全测试准确性-----------------------------------------------
-#       116: 1278:    vm->bind_func<0>(mod, "localtime", [](VM* vm, ArgsView args) {
-#     #####: 1279:        auto now = std::chrono::system_clock::now();
-#     #####: 1280:        std::time_t t = std::chrono::system_clock::to_time_t(now);
-#     #####: 1281:        std::tm* tm = std::localtime(&t);
-#     #####: 1282:        Dict d(vm);
-#     #####: 1283:        d.set(VAR("tm_year"), VAR(tm->tm_year + 1900));
-#     #####: 1284:        d.set(VAR("tm_mon"), VAR(tm->tm_mon + 1));
-#     #####: 1285:        d.set(VAR("tm_mday"), VAR(tm->tm_mday));
-#     #####: 1286:        d.set(VAR("tm_hour"), VAR(tm->tm_hour));
-#     #####: 1287:        d.set(VAR("tm_min"), VAR(tm->tm_min));
-#     #####: 1288:        d.set(VAR("tm_sec"), VAR(tm->tm_sec + 1));
-#     #####: 1289:        d.set(VAR("tm_wday"), VAR((tm->tm_wday + 6) % 7));
-#     #####: 1290:        d.set(VAR("tm_yday"), VAR(tm->tm_yday + 1));
-#     #####: 1291:        d.set(VAR("tm_isdst"), VAR(tm->tm_isdst));
-#     #####: 1292:        return VAR(std::move(d));
-#     #####: 1293:    });
-#        58: 1294:}
 # test time.localtime
 assert type(time.localtime()) is time.struct_time
 
@@ -674,3 +622,11 @@ assert issubclass(object, object) is True
 assert issubclass(int, type) is False
 assert issubclass(type, type) is True
 assert issubclass(float, int) is False
+
+
+def f(a, b):
+    c = a
+    del a
+    return sum([b, c])
+
+assert f(1, 2) == 3

@@ -167,7 +167,7 @@ void init_builtins(VM* _vm) {
             i64 rhs = CAST(i64, args[1]);
             if(rhs == 0) vm->ZeroDivisionError();
             auto res = std::div(lhs, rhs);
-            return VAR(Tuple({VAR(res.quot), VAR(res.rem)}));
+            return VAR(Tuple(VAR(res.quot), VAR(res.rem)));
         }else{
             return vm->call_method(args[0], __divmod__, args[1]);
         }
@@ -257,9 +257,9 @@ void init_builtins(VM* _vm) {
     });
 
     _vm->bind_func<1>(_vm->builtins, "hex", [](VM* vm, ArgsView args) {
-        std::stringstream ss; // hex
-        ss << std::hex << CAST(i64, args[0]);
-        return VAR("0x" + ss.str());
+        SStream ss;
+        ss.write_hex(CAST(i64, args[0]));
+        return VAR(ss.str());
     });
 
     _vm->bind_func<1>(_vm->builtins, "iter", [](VM* vm, ArgsView args) {
@@ -303,9 +303,10 @@ void init_builtins(VM* _vm) {
     // tp_object
     _vm->bind__repr__(VM::tp_object, [](VM* vm, PyObject* obj) {
         if(is_tagged(obj)) PK_FATAL_ERROR();
-        std::stringstream ss; // hex
-        ss << "<" << OBJ_NAME(vm->_t(obj)) << " object at 0x";
-        ss << std::hex << reinterpret_cast<intptr_t>(obj) << ">";
+        SStream ss;
+        ss << "<" << _type_name(vm, vm->_tp(obj)) << " object at ";
+        ss.write_hex(obj);
+        ss << ">";
         return VAR(ss.str());
     });
 
@@ -676,17 +677,16 @@ void init_builtins(VM* _vm) {
     });
 
     _vm->bind__repr__(VM::tp_list, [](VM* vm, PyObject* _0){
+        if(vm->_repr_recursion_set.count(_0)) return VAR("[...]");
         List& iterable = _CAST(List&, _0);
         SStream ss;
         ss << '[';
+        vm->_repr_recursion_set.insert(_0);
         for(int i=0; i<iterable.size(); i++){
-            if(iterable[i] == _0){
-                ss << "[...]";
-            }else{
-                ss << CAST(Str&, vm->py_repr(iterable[i]));
-            }
+            ss << CAST(Str&, vm->py_repr(iterable[i]));
             if(i != iterable.size()-1) ss << ", ";
         }
+        vm->_repr_recursion_set.erase(_0);
         ss << ']';
         return VAR(ss.str());
     });
@@ -1034,6 +1034,16 @@ void init_builtins(VM* _vm) {
         return VAR(Slice(args[1], args[2], args[3]));
     });
 
+    _vm->bind__eq__(VM::tp_slice, [](VM* vm, PyObject* _0, PyObject* _1){
+        const Slice& self = _CAST(Slice&, _0);
+        if(!is_non_tagged_type(_1, vm->tp_slice)) return vm->NotImplemented;
+        const Slice& other = _CAST(Slice&, _1);
+        if(vm->py_ne(self.start, other.start)) return vm->False;
+        if(vm->py_ne(self.stop, other.stop)) return vm->False;
+        if(vm->py_ne(self.step, other.step)) return vm->False;
+        return vm->True;
+    });
+
     _vm->bind__repr__(VM::tp_slice, [](VM* vm, PyObject* _0) {
         const Slice& self = _CAST(Slice&, _0);
         SStream ss;
@@ -1063,7 +1073,7 @@ void init_builtins(VM* _vm) {
         MappingProxy& self = _CAST(MappingProxy&, args[0]);
         List items;
         for(auto& item : self.attr().items()){
-            PyObject* t = VAR(Tuple({VAR(item.first.sv()), item.second}));
+            PyObject* t = VAR(Tuple(VAR(item.first.sv()), item.second));
             items.push_back(std::move(t));
         }
         return VAR(std::move(items));
@@ -1097,16 +1107,19 @@ void init_builtins(VM* _vm) {
     });
 
     _vm->bind__repr__(VM::tp_mappingproxy, [](VM* vm, PyObject* _0) {
+        if(vm->_repr_recursion_set.count(_0)) return VAR("{...}");
         MappingProxy& self = _CAST(MappingProxy&, _0);
         SStream ss;
         ss << "mappingproxy({";
         bool first = true;
+        vm->_repr_recursion_set.insert(_0);
         for(auto& item : self.attr().items()){
             if(!first) ss << ", ";
             first = false;
             ss << item.first.escape() << ": ";
             ss << CAST(Str, vm->py_repr(item.second));
         }
+        vm->_repr_recursion_set.erase(_0);
         ss << "})";
         return VAR(ss.str());
     });
@@ -1220,7 +1233,7 @@ void init_builtins(VM* _vm) {
         Tuple items(self.size());
         int j = 0;
         self.apply([&](PyObject* k, PyObject* v){
-            items[j++] = VAR(Tuple({k, v}));
+            items[j++] = VAR(Tuple(k, v));
         });
         return VAR(std::move(items));
     });
@@ -1244,20 +1257,18 @@ void init_builtins(VM* _vm) {
     });
 
     _vm->bind__repr__(VM::tp_dict, [](VM* vm, PyObject* _0) {
+        if(vm->_repr_recursion_set.count(_0)) return VAR("{...}");
         Dict& self = _CAST(Dict&, _0);
         SStream ss;
         ss << "{";
         bool first = true;
+        vm->_repr_recursion_set.insert(_0);
         self.apply([&](PyObject* k, PyObject* v){
             if(!first) ss << ", ";
             first = false;
-            ss << CAST(Str&, vm->py_repr(k)) << ": ";
-            if(v == _0){
-                ss << "{...}";
-            }else{
-                ss << CAST(Str&, vm->py_repr(v));
-            }
+            ss << CAST(Str&, vm->py_repr(k)) << ": " << CAST(Str&, vm->py_repr(v));
         });
+        vm->_repr_recursion_set.erase(_0);
         ss << "}";
         return VAR(ss.str());
     });
@@ -1456,7 +1467,6 @@ void VM::post_init(){
     add_module_gc(this);
     add_module_random(this);
     add_module_base64(this);
-    add_module_timeit(this);
     add_module_operator(this);
     add_module_csv(this);
 
