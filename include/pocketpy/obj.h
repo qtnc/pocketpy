@@ -207,13 +207,7 @@ inline void gc_mark_namedict(NameDict& t){
     });
 }
 
-StrName obj_type_name(VM* vm, Type type);
-
-#if PK_DEBUG_NO_BUILTINS
-#define OBJ_NAME(obj) Str("<?>")
-#else
-#define OBJ_NAME(obj) PK_OBJ_GET(Str, vm->getattr(obj, __name__))
-#endif
+StrName _type_name(VM* vm, Type type);
 
 template <typename, typename=void> struct is_py_class : std::false_type {};
 template <typename T> struct is_py_class<T, std::void_t<decltype(T::_type)>> : std::true_type {};

@@ -56,8 +56,8 @@ class Compiler {
     void consume_end_stmt();
 
     /*************************************************/
-    void EXPR(bool push_stack=true);
-    void EXPR_TUPLE(bool push_stack=true);
+    void EXPR();
+    void EXPR_TUPLE(bool allow_slice=false);
     Expr_ EXPR_VARS();  // special case for `for loop` and `comp`
 
     template <typename T, typename... Args>
@@ -95,7 +95,6 @@ ce->comps.emplace_back(std::move(comp));
     void exprBytes();
     void exprFString();
     void exprLambda();
-    void exprTuple();
     void exprGenComp(int prev_i);
     void exprOr();
     void exprAnd();
@@ -109,14 +108,16 @@ ce->comps.emplace_back(std::move(comp));
     void exprCall();
     void exprName();
     void exprAttrib();
+    void exprSlice0();
+    void exprSlice1();
     void exprSubscr();
     void exprLiteral0();
 
-    void compile_block_body();
+    void compile_block_body(void (Compiler::*callback)()=nullptr);
     void compile_normal_import();
     void compile_from_import();
-    bool is_expression();
-    void parse_expression(int precedence, bool push_stack=true);
+    bool is_expression(bool allow_slice=false);
+    void parse_expression(int precedence, bool allow_slice=false);
     void compile_if_stmt();
     void compile_while_loop();
     void compile_for_loop();

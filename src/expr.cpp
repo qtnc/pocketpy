@@ -16,17 +16,17 @@ namespace pkpy{
     int CodeEmitContext::get_loop() const {
         int index = curr_block_i;
         while(index >= 0){
-            if(co->blocks[index].type == FOR_LOOP) break;
-            if(co->blocks[index].type == WHILE_LOOP) break;
+            if(co->blocks[index].type == CodeBlockType::FOR_LOOP) break;
+            if(co->blocks[index].type == CodeBlockType::WHILE_LOOP) break;
             index = co->blocks[index].parent;
         }
         return index;
     }
 
     CodeBlock* CodeEmitContext::enter_block(CodeBlockType type){
-        if(type == FOR_LOOP) for_loop_depth++;
+        if(type==CodeBlockType::FOR_LOOP || type==CodeBlockType::CONTEXT_MANAGER) base_stack_size++;
         co->blocks.push_back(CodeBlock(
-            type, curr_block_i, for_loop_depth, (int)co->codes.size()
+            type, curr_block_i, base_stack_size, (int)co->codes.size()
         ));
         curr_block_i = co->blocks.size()-1;
         return &co->blocks[curr_block_i];
@@ -34,12 +34,12 @@ namespace pkpy{
 
     void CodeEmitContext::exit_block(){
         auto curr_type = co->blocks[curr_block_i].type;
-        if(curr_type == FOR_LOOP) for_loop_depth--;
+        if(curr_type == CodeBlockType::FOR_LOOP || curr_type==CodeBlockType::CONTEXT_MANAGER) base_stack_size--;
         co->blocks[curr_block_i].end = co->codes.size();
         curr_block_i = co->blocks[curr_block_i].parent;
         if(curr_block_i < 0) PK_FATAL_ERROR();
 
-        if(curr_type == FOR_LOOP){
+        if(curr_type == CodeBlockType::FOR_LOOP){
             // add a no op here to make block check work
             emit_(OP_NO_OP, BC_NOARG, BC_KEEPLINE);
         }
@@ -47,17 +47,9 @@ namespace pkpy{
 
     // clear the expression stack and generate bytecode
     void CodeEmitContext::emit_expr(){
-        if(s_expr.size() != 1){
-            throw std::runtime_error("s_expr.size() != 1\n" + _log_s_expr());
-        }
+        if(s_expr.size() != 1) throw std::runtime_error("s_expr.size() != 1");
         Expr_ expr = s_expr.popx();
         expr->emit_(this);
-    }
-
-    std::string CodeEmitContext::_log_s_expr(){
-        std::stringstream ss; // debug
-        for(auto& e: s_expr.data()) ss << e->str() << " ";
-        return ss.str();
     }
 
     int CodeEmitContext::emit_(Opcode opcode, uint16_t arg, int line) {
@@ -395,7 +387,7 @@ Comp& comp = comps[comp_index];
 if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->emit_(OP_DUP_NTH, comp_index+1, BC_KEEPLINE);
         comp.iter->emit_(ctx);
         ctx->emit_(OP_GET_ITER, BC_NOARG, BC_KEEPLINE);
-        ctx->enter_block(FOR_LOOP);
+        ctx->enter_block(CodeBlockType::FOR_LOOP);
         ctx->emit_(OP_FOR_ITER, BC_NOARG, BC_KEEPLINE);
         bool ok = comp.vars->emit_store(ctx);
         // this error occurs in `vars` instead of this line, but...nevermind
@@ -554,28 +546,24 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
 
     void AttribExpr::emit_(CodeEmitContext* ctx){
         a->emit_(ctx);
-        int index = StrName(b).index;
-        ctx->emit_(OP_LOAD_ATTR, index, line);
+        ctx->emit_(OP_LOAD_ATTR, b.index, line);
     }
 
     bool AttribExpr::emit_del(CodeEmitContext* ctx) {
         a->emit_(ctx);
-        int index = StrName(b).index;
-        ctx->emit_(OP_DELETE_ATTR, index, line);
+        ctx->emit_(OP_DELETE_ATTR, b.index, line);
         return true;
     }
 
     bool AttribExpr::emit_store(CodeEmitContext* ctx){
         a->emit_(ctx);
-        int index = StrName(b).index;
-        ctx->emit_(OP_STORE_ATTR, index, line);
+        ctx->emit_(OP_STORE_ATTR, b.index, line);
         return true;
     }
 
     void AttribExpr::emit_method(CodeEmitContext* ctx) {
         a->emit_(ctx);
-        int index = StrName(b).index;
-        ctx->emit_(OP_LOAD_METHOD, index, line);
+        ctx->emit_(OP_LOAD_METHOD, b.index, line);
     }
 
     void CallExpr::emit_(CodeEmitContext* ctx) {

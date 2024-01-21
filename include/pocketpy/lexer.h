@@ -21,7 +21,7 @@ constexpr const char* kTokens[] = {
     "<<", "<<=", ">>", ">>=",
     /*****************************************/
     ".", ",", ":", ";", "#", "(", ")", "[", "]", "{", "}",
-    "**", "=", ">", "<", "..", "...", "->", "?", "@", "==", "!=", ">=", "<=",
+    "**", "=", ">", "<", "..", "...", "->", "@", "==", "!=", ">=", "<=",
     "++", "--", "~",
     /** KW_BEGIN **/
     "class", "import", "as", "def", "lambda", "pass", "del", "from", "with", "yield",
@@ -71,8 +71,7 @@ struct Token{
 
 // https://docs.python.org/3/reference/expressions.html#operator-precedence
 enum Precedence {
-  PREC_NONE,
-  PREC_TUPLE,         // ,
+  PREC_LOWEST,
   PREC_LAMBDA,        // lambda
   PREC_TERNARY,       // ?:
   PREC_LOGICAL_OR,    // or
@@ -92,10 +91,8 @@ enum Precedence {
   PREC_FACTOR,        // * / % // @
   PREC_UNARY,         // - not ~
   PREC_EXPONENT,      // **
-  PREC_CALL,          // ()
-  PREC_SUBSCRIPT,     // []
-  PREC_ATTRIB,        // .index
-  PREC_PRIMARY,
+  PREC_PRIMARY,       // f() x[] a.b 1:2
+  PREC_HIGHEST,
 };
 
 enum StringType { NORMAL_STRING, RAW_STRING, F_STRING, NORMAL_BYTES };

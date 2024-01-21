@@ -44,6 +44,34 @@ namespace pkpy{
             return vm->heap.gcnew<C99Struct>(cls, size);
         });
 
+        vm->bind_method<0>(type, "hex", [](VM* vm, ArgsView args){
+            const C99Struct& self = _CAST(C99Struct&, args[0]);
+            SStream ss;
+            for(int i=0; i<self.size; i++) ss.write_hex((unsigned char)self.p[i]);
+            return VAR(ss.str());
+        });
+
+        // @staticmethod
+        vm->bind_func<1>(type, "fromhex", [](VM* vm, ArgsView args){
+            const Str& s = CAST(Str&, args[0]);
+            if(s.size<2 || s.size%2!=0) vm->ValueError("invalid hex string");
+            C99Struct buffer(s.size/2, false);
+            for(int i=0; i<s.size; i+=2){
+                char c = 0;
+                if(s[i]>='0' && s[i]<='9') c += s[i]-'0';
+                else if(s[i]>='A' && s[i]<='F') c += s[i]-'A'+10;
+                else if(s[i]>='a' && s[i]<='f') c += s[i]-'a'+10;
+                else vm->ValueError(fmt("invalid hex char: '", s[i], "'"));
+                c <<= 4;
+                if(s[i+1]>='0' && s[i+1]<='9') c += s[i+1]-'0';
+                else if(s[i+1]>='A' && s[i+1]<='F') c += s[i+1]-'A'+10;
+                else if(s[i+1]>='a' && s[i+1]<='f') c += s[i+1]-'a'+10;
+                else vm->ValueError(fmt("invalid hex char: '", s[i+1], "'"));
+                buffer.p[i/2] = c;
+            }
+            return VAR_T(C99Struct, std::move(buffer));
+        }, {}, BindType::STATICMETHOD);
+
         vm->bind__repr__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* obj){
             C99Struct& self = _CAST(C99Struct&, obj);
             SStream ss;
@@ -108,7 +136,6 @@ namespace pkpy{
 void add_module_c(VM* vm){
     PyObject* mod = vm->new_module("c");
     
-#if PK_ENABLE_OS
     vm->bind_func<1>(mod, "malloc", [](VM* vm, ArgsView args){
         i64 size = CAST(i64, args[0]);
         return VAR(malloc(size));
@@ -133,7 +160,6 @@ void add_module_c(VM* vm){
         memcpy(dst, src, size);
         return vm->None;
     });
-#endif
 
     VoidP::register_class(vm, mod);
     C99Struct::register_class(vm, mod);

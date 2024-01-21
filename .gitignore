@@ -5,23 +5,21 @@ __pycache__/
 .coverage
 .idea
 
-src/main
 gmon.out
 gprof.txt
-/pocketpy
 amalgamated
 web/lib
 
+*.a
 *.so
 *.dll
 *.exe
 *.a
+*.dylib
+
 plugins/unity/
 plugins/macos/pocketpy/pocketpy.*
 include/pocketpy/_generated.h
-profile.sh
-test
-src/httplib.h
 main.exe
 main.obj
 pocketpy.exp
@@ -29,7 +27,6 @@ pocketpy.lib
 APPS
 build
 
-pocketpy.dSYM
 main
 
 pypi/
@@ -40,5 +37,7 @@ libpocketpy.dylib
 obj/
 objd/
 out*.txt
+
+pocketpy.dSYM
 libpocketpy.dylib.dSYM/
 main.dSYM/

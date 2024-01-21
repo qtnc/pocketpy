@@ -1,15 +1,11 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.12)
 
 project(pocketpy)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if (${CMAKE_VERSION} VERSION_LESS "3.12.0") 
-    set(Python3_EXECUTABLE "python3")
-else()
-    find_package(Python3 COMPONENTS Interpreter)
-endif()
+find_package(Python3 COMPONENTS Interpreter)
 
 execute_process(
     COMMAND ${Python3_EXECUTABLE} prebuild.py
@@ -21,9 +17,7 @@ if(NOT ${PREBUILD_RESULT} EQUAL 0)
     message(FATAL_ERROR "prebuild.py: ${PREBUILD_RESULT}")
 endif()
 
-if(EMSCRIPTEN)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -O3")
-elseif(MSVC)
+if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc /utf-8 /O2")
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -O2")
@@ -41,7 +35,6 @@ aux_source_directory(${CMAKE_CURRENT_LIST_DIR}/src POCKETPY_SRC)
 option(PK_USE_CJSON "Use cJSON" OFF)
 if(PK_USE_CJSON)
     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/3rd/cjson)
-    include_directories(${CMAKE_CURRENT_LIST_DIR}/3rd/cjson/include)
     add_definitions(-DPK_USE_CJSON)
 endif()
 

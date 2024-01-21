@@ -1,4 +1,5 @@
 #include<iostream>
+#include<sstream>
     #include "pocketpy.h"
 #include "pocketpy/binding2.h"
 #include<clocale>

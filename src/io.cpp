@@ -5,6 +5,7 @@
 
 namespace pkpy{
 
+#if PK_ENABLE_OS
 static FILE* io_fopen(const char* name, const char* mode){
 #if _MSC_VER
     FILE* fp;
@@ -23,6 +24,7 @@ static size_t io_fread(void* buffer, size_t size, size_t count, FILE* fp){
     return fread(buffer, size, count, fp);
 #endif
 }
+#endif
 
 
 unsigned char* _default_import_handler(VM* vm, const char* name_p, int name_size, int* out_size){
@@ -100,6 +102,8 @@ return ::rmdir(name.c_str());
 }
 #else
 bool exists (const std::string& name) override { return false; }
+bool isfile (const std::string& name) override { return false; }
+bool isdir (const std::string& name) override { return false; }
 void* open (const std::string& name, const std::string& mode) override { return nullptr; }
 void seek (void* fp, int n, int a) override { }
 int tell (void* fp) override { return -1; }
@@ -119,9 +123,10 @@ IOHandler* _default_io_handler = &_default_io_handler_1;
 #if PK_ENABLE_OS
     void FileIO::_register(VM* vm, PyObject* mod, PyObject* type){
         vm->bind_constructor<3>(type, [](VM* vm, ArgsView args){
-            return VAR_T(FileIO, 
-                vm, CAST(Str&, args[1]).str(), CAST(Str&, args[2]).str()
-            );
+            Type cls = PK_OBJ_GET(Type, args[0]);
+            return vm->heap.gcnew<FileIO>(cls, vm,
+                       py_cast<Str&>(vm, args[1]).str(),
+                       py_cast<Str&>(vm, args[2]).str());
         });
 
         vm->bind_method<0>(type, "read", [](VM* vm, ArgsView args){
@@ -162,7 +167,7 @@ IOHandler* _default_io_handler = &_default_io_handler_1;
             return vm->None;
         });
 
-        vm->bind_method<0>(type, "__enter__", PK_LAMBDA(vm->None));
+        vm->bind_method<0>(type, "__enter__", PK_LAMBDA(args[0]));
     }
 
     FileIO::FileIO(VM* vm, std::string file, std::string mode): file(file), mode(mode) {
@@ -195,7 +200,6 @@ void add_module_os(VM* vm){
     PyObject* mod = vm->new_module("os");
     PyObject* path_obj = vm->heap.gcnew<DummyInstance>(vm->tp_object);
     mod->attr().set("path", path_obj);
-
     vm->bind_func<1>(mod, "listdir", [](VM* vm, ArgsView args){
 std::string path = CAST(Str&, args[0]).str();
         try{
