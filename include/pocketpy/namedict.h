@@ -19,7 +19,7 @@ constexpr T default_invalid_value(){
 template<typename V>
 struct SmallNameDict{
     using K = StrName;
-    static_assert(std::is_pod_v<V>);
+    static_assert(is_pod<V>::value);
 
     bool _is_small;
     uint16_t _size;
@@ -291,7 +291,7 @@ struct NameDictImpl{
     V operator[](StrName key) const {
         V val = try_get_likely_found(key);
         if(val == default_invalid_value<V>()){
-            throw std::runtime_error(fmt("NameDict key not found: ", key.escape()).str());
+            throw std::runtime_error(_S("NameDict key not found: ", key.escape()).str());
         }
         return val;
     }
