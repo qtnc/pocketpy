@@ -20,7 +20,7 @@ endif()
 if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc /utf-8 /O2")
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -s -O2")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -O2")
 
     # disable -Wshorten-64-to-32 for apple
     if(APPLE)
@@ -32,10 +32,15 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 
 aux_source_directory(${CMAKE_CURRENT_LIST_DIR}/src POCKETPY_SRC)
 
-option(PK_USE_CJSON "Use cJSON" OFF)
+option(PK_USE_CJSON "" OFF)
 if(PK_USE_CJSON)
     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/3rd/cjson)
     add_definitions(-DPK_USE_CJSON)
+endif()
+
+option(PK_ENABLE_OS "" OFF)
+if(PK_ENABLE_OS)
+    add_definitions(-DPK_ENABLE_OS=1)
 endif()
 
 # PK_IS_MAIN determines whether the project is being used from root
