@@ -977,7 +977,6 @@ __EAT_DOTS_END:
                         is_typed_name = true;
 
                         if(ctx()->is_compiling_class){
-                            // add to __annotations__
                             NameExpr* ne = static_cast<NameExpr*>(ctx()->s_expr.top().get());
                             ctx()->emit_(OP_ADD_CLASS_ANNOTATION, ne->name.index, BC_KEEPLINE);
                         }
@@ -1189,12 +1188,23 @@ __EAT_DOTS_END:
             case TK("False"): return VAR(false);
             case TK("None"): return vm->None;
             case TK("..."): return vm->Ellipsis;
+            case TK("("): {
+                List cpnts;
+                while(true) {
+                    cpnts.push_back(read_literal());
+                    if(curr().type == TK(")")) break;
+                    consume(TK(","));
+                    if(curr().type == TK(")")) break;
+                }
+                consume(TK(")"));
+                return VAR(Tuple(std::move(cpnts)));
+            }
             default: break;
         }
         return nullptr;
     }
 
-    Compiler::Compiler(VM* vm, const Str& source, const Str& filename, CompileMode mode, bool unknown_global_scope){
+    Compiler::Compiler(VM* vm, std::string_view source, const Str& filename, CompileMode mode, bool unknown_global_scope){
         this->vm = vm;
         this->used = false;
         this->unknown_global_scope = unknown_global_scope;

@@ -16,11 +16,7 @@ typedef void (*pkpy_COutputHandler)(const char*, int);
 typedef unsigned char* (*pkpy_CImportHandler)(pkpy_vm*, const char*, int, int*);
 typedef int pkpy_CName;
 typedef int pkpy_CType;
-
-typedef struct{
-    const char* data;
-    int size;
-}pkpy_CString;
+typedef const char* pkpy_CString;
 
 /* Basic Functions */
 PK_EXPORT pkpy_vm* pkpy_new_vm(bool enable_os);
@@ -91,7 +87,7 @@ PK_EXPORT bool pkpy_vectorcall(pkpy_vm*, int argc);
 
 /* Special APIs */
 PK_EXPORT void pkpy_free(void* p);
-PK_EXPORT pkpy_CString pkpy_string(const char* s);
+#define pkpy_string(__s) (__s)
 PK_EXPORT pkpy_CName pkpy_name(const char* s);
 PK_EXPORT pkpy_CString pkpy_name_to_string(pkpy_CName name);
 PK_EXPORT void pkpy_set_output_handler(pkpy_vm*, pkpy_COutputHandler handler);
