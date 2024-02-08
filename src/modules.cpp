@@ -223,18 +223,16 @@ void add_module_traceback(VM* vm){
 void add_module_dis(VM* vm){
     PyObject* mod = vm->new_module("dis");
 
-    static const auto get_code = [](VM* vm, PyObject* obj)->CodeObject_{
+    vm->bind_func<1>(mod, "dis", [](VM* vm, ArgsView args) {
+        CodeObject_ code;
+        PyObject* obj = args[0];
         if(is_type(obj, vm->tp_str)){
             const Str& source = CAST(Str, obj);
-            return vm->compile(source, "<dis>", EXEC_MODE);
+            code = vm->compile(source, "<dis>", EXEC_MODE);
         }
         PyObject* f = obj;
         if(is_type(f, vm->tp_bound_method)) f = CAST(BoundMethod, obj).func;
-        return CAST(Function&, f).decl->code;
-    };
-
-    vm->bind_func<1>(mod, "dis", [](VM* vm, ArgsView args) {
-        CodeObject_ code = get_code(vm, args[0]);
+        code = CAST(Function&, f).decl->code;
         vm->stdout_write(vm->disassemble(code));
         return vm->None;
     });
@@ -245,5 +243,69 @@ void add_module_gc(VM* vm){
     vm->bind_func<0>(mod, "collect", PK_LAMBDA(VAR(vm->heap.collect())));
 }
 
+struct LineProfilerW;
+struct _LpGuard{
+    PK_ALWAYS_PASS_BY_POINTER(_LpGuard)
+    LineProfilerW* lp;
+    VM* vm;
+    _LpGuard(LineProfilerW* lp, VM* vm);
+    ~_LpGuard();
+};
+
+// line_profiler wrapper
+struct LineProfilerW{
+    PY_CLASS(LineProfilerW, line_profiler, LineProfiler)
+
+    LineProfiler profiler;
+
+    static void _register(VM* vm, PyObject* mod, PyObject* type){
+        vm->bind_default_constructor<LineProfilerW>(type);
+
+        vm->bind(type, "add_function(self, func)", [](VM* vm, ArgsView args){
+            LineProfilerW& self = PK_OBJ_GET(LineProfilerW, args[0]);
+            vm->check_non_tagged_type(args[1], VM::tp_function);
+            auto decl = PK_OBJ_GET(Function, args[1]).decl.get();
+            self.profiler.functions.insert(decl);
+            return vm->None;
+        });
+
+        vm->bind(type, "runcall(self, func, *args)", [](VM* vm, ArgsView view){
+            LineProfilerW& self = PK_OBJ_GET(LineProfilerW, view[0]);
+            PyObject* func = view[1];
+            const Tuple& args = CAST(Tuple&, view[2]);
+            vm->s_data.push(func);
+            vm->s_data.push(PY_NULL);
+            for(PyObject* arg : args) vm->s_data.push(arg);
+            _LpGuard guard(&self, vm);
+            PyObject* ret = vm->vectorcall(args.size());
+            return ret;
+        });
+
+        vm->bind(type, "print_stats(self)", [](VM* vm, ArgsView args){
+            LineProfilerW& self = PK_OBJ_GET(LineProfilerW, args[0]);
+            vm->stdout_write(self.profiler.stats());
+            return vm->None;
+        });
+    }
+};
+
+
+_LpGuard::_LpGuard(LineProfilerW* lp, VM* vm): lp(lp), vm(vm) {
+    if(vm->_profiler){
+        vm->ValueError("only one profiler can be enabled at a time");
+    }
+    vm->_profiler = &lp->profiler;
+    lp->profiler.begin();
+}
+
+_LpGuard::~_LpGuard(){
+    vm->_profiler = nullptr;
+    lp->profiler.end();
+}
+
+void add_module_line_profiler(VM *vm){
+    PyObject* mod = vm->new_module("line_profiler");
+    LineProfilerW::register_class(vm, mod);
+}
 
 }   // namespace pkpy

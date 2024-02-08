@@ -65,8 +65,10 @@ struct Str{
     const char* c_str() const;
     std::string_view sv() const;
     std::string str() const;
-    Str lstrip() const;
-    Str strip() const;
+    Str strip(bool left, bool right, const Str& chars) const;
+    Str strip(bool left=true, bool right=true) const;
+    Str lstrip() const { return strip(true, false); }
+    Str rstrip() const { return strip(false, true); }
     Str lower() const;
     Str upper() const;
     Str escape(bool single_quote=true) const;
@@ -97,7 +99,6 @@ struct StrName {
     const char* c_str() const;
     bool empty() const { return index == 0; }
 
-    friend std::ostream& operator<<(std::ostream& os, const StrName& sn);
     Str escape() const;
 
     bool operator==(const StrName& other) const noexcept {
@@ -148,7 +149,7 @@ struct SStream{
     SStream& operator<<(char);
     SStream& operator<<(StrName);
 
-    void write_hex(unsigned char);
+    void write_hex(unsigned char, bool non_zero=false);
     void write_hex(void*);
     void write_hex(i64);
 };

@@ -10,6 +10,7 @@
 #include "str.h"
 #include "tuplelist.h"
 #include "dict.h"
+#include "profiler.h"
 
 namespace pkpy{
 
@@ -153,9 +154,9 @@ public:
     // cached code objects for FSTRING_EVAL
     std::map<std::string_view, CodeObject_> _cached_codes;
 
-#if PK_ENABLE_CEVAL_CALLBACK
     void (*_ceval_on_step)(VM*, Frame*, Bytecode bc) = nullptr;
-#endif
+
+    LineProfiler* _profiler = nullptr;
 
     PrintFunc _stdout;
     PrintFunc _stderr;
@@ -329,6 +330,7 @@ public:
 
     int normalized_index(int index, int size);
     PyObject* py_next(PyObject* obj);
+    bool py_callable(PyObject* obj);
     
     /***** Error Reporter *****/
     void _raise(bool re_raise=false);

@@ -145,15 +145,7 @@ void init_builtins(VM* _vm) {
     });
 
     _vm->bind_func<1>(_vm->builtins, "callable", [](VM* vm, ArgsView args) {
-        Type cls = vm->_tp(args[0]);
-        switch(cls.index){
-            case VM::tp_function.index: return vm->True;
-            case VM::tp_native_func.index: return vm->True;
-            case VM::tp_bound_method.index: return vm->True;
-            case VM::tp_type.index: return vm->True;
-        }
-        bool ok = vm->find_name_in_mro(cls, __call__) != nullptr;
-        return VAR(ok);
+        return VAR(vm->py_callable(args[0]));
     });
 
     _vm->bind_func<1>(_vm->builtins, "__import__", [](VM* vm, ArgsView args) {
@@ -656,6 +648,74 @@ void init_builtins(VM* _vm) {
     _vm->bind_method<0>(VM::tp_str, "upper", [](VM* vm, ArgsView args) {
         const Str& self = _CAST(Str&, args[0]);
         return VAR(self.upper());
+    });
+
+    _vm->bind(_vm->_t(VM::tp_str), "strip(self, chars=None)", [](VM* vm, ArgsView args) {
+        const Str& self = _CAST(Str&, args[0]);
+        if(args[1] == vm->None){
+            return VAR(self.strip());
+        }else{
+            const Str& chars = CAST(Str&, args[1]);
+            return VAR(self.strip(true, true, chars));
+        }
+    });
+
+    _vm->bind(_vm->_t(VM::tp_str), "lstrip(self, chars=None)", [](VM* vm, ArgsView args) {
+        const Str& self = _CAST(Str&, args[0]);
+        if(args[1] == vm->None){
+            return VAR(self.lstrip());
+        }else{
+            const Str& chars = CAST(Str&, args[1]);
+            return VAR(self.strip(true, false, chars));
+        }
+    });
+
+    _vm->bind(_vm->_t(VM::tp_str), "rstrip(self, chars=None)", [](VM* vm, ArgsView args) {
+        const Str& self = _CAST(Str&, args[0]);
+        if(args[1] == vm->None){
+            return VAR(self.rstrip());
+        }else{
+            const Str& chars = CAST(Str&, args[1]);
+            return VAR(self.strip(false, true, chars));
+        }
+    });
+
+    // zfill
+    _vm->bind(_vm->_t(VM::tp_str), "zfill(self, width)", [](VM* vm, ArgsView args) {
+        const Str& self = _CAST(Str&, args[0]);
+        int width = CAST(int, args[1]);
+        int delta = width - self.u8_length();
+        if(delta <= 0) return args[0];
+        SStream ss;
+        for(int i=0; i<delta; i++) ss << '0';
+        ss << self;
+        return VAR(ss.str());
+    });
+
+    // ljust
+    _vm->bind(_vm->_t(VM::tp_str), "ljust(self, width, fillchar=' ')", [](VM* vm, ArgsView args) {
+        const Str& self = _CAST(Str&, args[0]);
+        int width = CAST(int, args[1]);
+        int delta = width - self.u8_length();
+        if(delta <= 0) return args[0];
+        const Str& fillchar = CAST(Str&, args[2]);
+        SStream ss;
+        ss << self;
+        for(int i=0; i<delta; i++) ss << fillchar;
+        return VAR(ss.str());
+    });
+
+    // rjust
+    _vm->bind(_vm->_t(VM::tp_str), "rjust(self, width, fillchar=' ')", [](VM* vm, ArgsView args) {
+        const Str& self = _CAST(Str&, args[0]);
+        int width = CAST(int, args[1]);
+        int delta = width - self.u8_length();
+        if(delta <= 0) return args[0];
+        const Str& fillchar = CAST(Str&, args[2]);
+        SStream ss;
+        for(int i=0; i<delta; i++) ss << fillchar;
+        ss << self;
+        return VAR(ss.str());
     });
 
     // tp_list / tp_tuple
@@ -1458,10 +1518,8 @@ void VM::post_init(){
     add_module_random(this);
     add_module_base64(this);
     add_module_operator(this);
-    add_module_csv(this);
-    add_module_dataclasses(this);
 
-    for(const char* name: {"this", "functools", "heapq", "bisect", "pickle", "_long", "colorsys", "typing", "datetime", "dataclasses", "cmath"}){
+    for(const char* name: {"this", "functools", "heapq", "bisect", "pickle", "_long", "colorsys", "typing", "datetime", "cmath"}){
         _lazy_modules[name] = kPythonLibs[name];
     }
 
@@ -1483,9 +1541,13 @@ void VM::post_init(){
         _import_handler = _default_import_handler;
     }
 
+    add_module_csv(this);
+    add_module_dataclasses(this);
     add_module_linalg(this);
     add_module_easing(this);
     add_module_collections(this);
+    add_module_array2d(this);
+    add_module_line_profiler(this);
 
 #ifdef PK_USE_CJSON
     add_module_cjson(this);

@@ -69,6 +69,26 @@ assert s.strip( '12' ) == "3abcrunoob3"
 assert t.strip( '*' ) == "this is **string** example....wow!!!"
 assert s.strip( '12' ) == "3abcrunoob3"
 
+assert '测试123'.strip('测试') == '123'
+assert '测试123测试'.strip('测试') == '123'
+assert '123测试'.strip('2') == '123测试'
+assert '测试123'.strip('测') == '试123'
+assert '测试123'.strip('试') == '测试123'
+
+assert '测试123测试'.lstrip('测试') == '123测试'
+assert '测试123测试'.rstrip('测试') == '测试123'
+
+assert 'abc'.lstrip('a') == 'bc'
+assert 'abc'.lstrip('b') == 'abc'
+assert 'abc'.lstrip('c') == 'abc'
+assert 'abc'.rstrip('a') == 'abc'
+assert 'abc'.rstrip('b') == 'abc'
+assert 'abc'.rstrip('c') == 'ab'
+
+assert 'abc'.lstrip('abc') == ''
+assert 'abc'.rstrip('abc') == ''
+assert 'abc'.strip('abc') == ''
+
 s = ' asd\n  asd \n'
 assert s.strip() == 'asd\n  asd'
 
@@ -160,3 +180,46 @@ assert list(a) == ['测']
 
 assert '\b\b\b' == '\x08\x08\x08'
 stack=[1,2,3,4]; assert f"{stack[2:]}" == '[3, 4]'
+
+assert repr('\x1f\x1e\x1f') == '\'\\x1f\\x1e\\x1f\''
+
+
+assert hex(-42) == '-0x2a'
+assert hex(42) == '0x2a'
+
+assert hex(0) == '0x0'
+assert hex(1) == '0x1'
+assert hex(15) == '0xf'
+assert hex(16) == '0x10'
+assert hex(255) == '0xff'
+assert hex(256) == '0x100'
+assert hex(257) == '0x101'
+assert hex(17) == '0x11'
+
+import c
+assert repr(c.NULL) == '<void* at 0x0>'
+assert repr(c.void_p(1)) == '<void* at 0x1>'
+assert repr(c.void_p(15)) == '<void* at 0xf>'
+assert repr(c.void_p(16)) == '<void* at 0x10>'
+assert repr(c.void_p(255)) == '<void* at 0xff>'
+assert repr(c.void_p(256)) == '<void* at 0x100>'
+assert repr(c.void_p(257)) == '<void* at 0x101>'
+assert repr(c.void_p(17)) == '<void* at 0x11>'
+
+# random hex test
+import random
+
+
+def test(__min, __max):
+    for _ in range(100):
+        num = random.randint(__min, __max)
+        hex_num = hex(num)
+        assert eval(hex_num) == num
+        if num >= 0:
+            assert repr(c.void_p(num)) == f'<void* at 0x{hex_num[2:]}>'
+
+test(0, 100)
+test(0, 100000)
+test(-100, 100)
+test(-100000, 100000)
+test(-2**30, 2**30)
