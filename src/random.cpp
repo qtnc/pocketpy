@@ -2,15 +2,11 @@
 
 namespace pkpy{
 
-struct Random{
-    PY_CLASS(Random, random, Random)
-    std::mt19937 gen;
-
-    Random(){
+    Random::Random(){
         gen.seed(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     }
 
-    static void _register(VM* vm, PyObject* mod, PyObject* type){
+    void Random::_register(VM* vm, PyObject* mod, PyObject* type){
         vm->bind_default_constructor<Random>(type);
 
         vm->bind_method<1>(type, "seed", [](VM* vm, ArgsView args) {
@@ -55,12 +51,15 @@ struct Random{
             return L[dis(self.gen)];
         });
     }
-};
+
+
+PyObject* Random::instance = nullptr;
 
 void add_module_random(VM* vm){
     PyObject* mod = vm->new_module("random");
     Random::register_class(vm, mod);
-    PyObject* instance = vm->heap.gcnew<Random>(Random::_type(vm));
+PyObject* instance  = vm->heap.gcnew<Random>(Random::_type(vm));
+Random::instance = instance;
     mod->attr().set("seed", vm->getattr(instance, "seed"));
     mod->attr().set("random", vm->getattr(instance, "random"));
     mod->attr().set("uniform", vm->getattr(instance, "uniform"));
