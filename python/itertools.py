@@ -91,3 +91,54 @@ def zip_longest (*args, fillvalue=None):
                 ++c
         if c<argc: yield l
         else: break
+
+
+def combinations(iterable, r):
+    pool = tuple(iterable)
+    n = len(pool)
+    if r > n: return
+    indices = list(range(r))
+    yield tuple(pool[i] for i in indices)
+    while True:
+        for i in range(r -1, -1, -1):
+            if indices[i] != i + n - r: break
+        else: return
+        indices[i] += 1
+        for j in range(i+1, r):
+            indices[j] = indices[j-1] + 1
+        yield tuple(pool[i] for i in indices)
+
+def combinations_with_replacement(iterable, r):
+    pool = tuple(iterable)
+    n = len(pool)
+    if not n and r: return
+    indices = [0] * r
+    yield tuple(pool[i] for i in indices)
+    while True:
+        for i in range(r -1, -1, -1):
+            if indices[i] != n - 1: break
+        else: return
+        indices[i:] = [indices[i] + 1] * (r - i)
+        yield tuple(pool[i] for i in indices)
+
+def permutations(iterable, r=None):
+    pool = tuple(iterable)
+    n = len(pool)
+    r = n if r is None else r
+    if r > n: return
+    indices = list(range(n))
+    cycles = list(range(n, n-r, -1))
+    yield tuple(pool[i] for i in indices[:r])
+    while n:
+        for i in range(r -1, -1, -1):
+            cycles[i] -= 1
+            if cycles[i] == 0:
+                indices[i:] = indices[i+1:] + indices[i:i+1]
+                cycles[i] = n - i
+            else:
+                j = cycles[i]
+                indices[i], indices[-j] = indices[-j], indices[i]
+                yield tuple(pool[i] for i in indices[:r])
+                break
+        else:
+            return
