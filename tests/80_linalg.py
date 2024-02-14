@@ -392,6 +392,11 @@ assert mat_to_str_list(mat3x3.trs(test_vec2_copy, radian, test_vec2_2_copy)) == 
 a = mat3x3.zeros()
 a.copy_trs_(test_vec2_copy, radian, test_vec2_2_copy)
 assert a == mat3x3.trs(test_vec2_copy, radian, test_vec2_2_copy)
+b = mat3x3.identity()
+b.copy_t_(test_vec2_copy)
+b.copy_r_(radian)
+b.copy_s_(test_vec2_2_copy)
+assert a == b
 
 # test is_affine
 def mat_is_affine(mat_list):
@@ -482,3 +487,8 @@ try:
     exit(1)
 except IndexError:
     pass
+
+# test vec * vec
+assert vec2(1, 2) * vec2(3, 4) == vec2(3, 8)
+assert vec3(1, 2, 3) * vec3(4, 5, 6) == vec3(4, 10, 18)
+assert vec4(1, 2, 3, 4) * vec4(5, 6, 7, 8) == vec4(5, 12, 21, 32)
