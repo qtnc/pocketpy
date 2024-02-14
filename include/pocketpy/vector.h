@@ -74,10 +74,12 @@ struct pod_vector{
     T popx_back() { T t = std::move(_data[_size-1]); _size--; return t; }
     
     void extend(const pod_vector& other){
+reserve(_size + other._size);
         for(int i=0; i<other.size(); i++) push_back(other[i]);
     }
 
     void extend(const T* begin, const T* end){
+reserve(_size + (end-begin));
         for(auto it=begin; it!=end; it++) push_back(*it);
     }
 
@@ -108,6 +110,15 @@ struct pod_vector{
     void erase(int i){
         for(int j=i; j<_size-1; j++) _data[j] = _data[j+1];
         _size--;
+    }
+
+    void replace(int start, int stop, const T* begin, const T* end){
+int n = (end-begin) - (stop-start);
+reserve(_size+n);
+if (n>0) for (int i=_size -1; i>=stop; i--) _data[i+n] = _data[i];
+else if (n<0) for (int i=stop; i<_size; i++) _data[i+n] = _data[i];
+for (auto it=begin; it!=end; ++it) _data[start++] = *it;
+_size += n;
     }
 
     void reverse(){

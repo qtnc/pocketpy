@@ -941,6 +941,16 @@ void init_builtins(VM* _vm) {
     _vm->bind__getitem__(VM::tp_list, PyArrayGetItem<List>);
     _vm->bind__setitem__(VM::tp_list, [](VM* vm, PyObject* _0, PyObject* _1, PyObject* _2){
         List& self = _CAST(List&, _0);
+    if(is_non_tagged_type(_1, vm->tp_slice)){
+        const Slice& s = _CAST(Slice&, _1);
+PyObject* _lst = vm->py_list(_2);
+List& list = _CAST(List&, _lst);
+        int start, stop, step;
+        vm->parse_int_slice(s, self.size(), start, stop, step);
+if (step==1) self.replace(start, stop, list.data(), list.data()+list.size());
+else for (int i=start, j=0, n=list.size(); i<stop && j<n; i+=step, j++) self[i] = list[j];
+return;
+}
         int i = CAST(int, _1);
         i = vm->normalized_index(i, self.size());
         self[i] = _2;
