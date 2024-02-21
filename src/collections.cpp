@@ -76,25 +76,25 @@ namespace pkpy
         vm->bind__getitem__(PK_OBJ_GET(Type, type), [](VM *vm, PyObject* _0, PyObject* _1)
         {
             PyDeque &self = _CAST(PyDeque &, _0);
-            int index = CAST(int, _1);
+            i64 index = CAST(i64, _1);
             index = vm->normalized_index(index, self.dequeItems.size()); // error is handled by the vm->normalized_index
-            return self.dequeItems.at(index);
+            return self.dequeItems[index];
         });
         // sets the item at the given index, if index is negative, it will be treated as index + len(deque)
         // if the index is out of range, IndexError will be thrown --> required for [] operator
         vm->bind__setitem__(PK_OBJ_GET(Type, type), [](VM *vm, PyObject* _0, PyObject* _1, PyObject* _2)
         {
             PyDeque &self = _CAST(PyDeque&, _0);
-            int index = CAST(int, _1);
+            i64 index = CAST(i64, _1);
             index = vm->normalized_index(index, self.dequeItems.size()); // error is handled by the vm->normalized_index
-            self.dequeItems.at(index) = _2;
+            self.dequeItems[index] = _2;
         });
         // erases the item at the given index, if index is negative, it will be treated as index + len(deque)
         // if the index is out of range, IndexError will be thrown --> required for [] operator
         vm->bind__delitem__(PK_OBJ_GET(Type, type), [](VM *vm, PyObject* _0, PyObject* _1)
         {
             PyDeque &self = _CAST(PyDeque&, _0);
-            int index = CAST(int, _1);
+            i64 index = CAST(i64, _1);
             index = vm->normalized_index(index, self.dequeItems.size()); // error is handled by the vm->normalized_index
             self.dequeItems.erase(self.dequeItems.begin() + index);
         });
@@ -220,7 +220,7 @@ namespace pkpy
                          newDeque.insertObj(false, true, -1, *it);
                      return newDequeObj;
                  });
-        // NEW: counts the number of occurences of the given object in the deque
+        // NEW: counts the number of occurrences of the given object in the deque
         vm->bind(type, "count(self, obj) -> int",
                  [](VM *vm, ArgsView args)
                  {
@@ -258,17 +258,11 @@ namespace pkpy
                      // Return the position of x in the deque (at or after index start and before index stop). Returns the first match or raises ValueError if not found.
                      PyDeque &self = _CAST(PyDeque &, args[0]);
                      PyObject *obj = args[1];
-                     int start = 0, stop = self.dequeItems.size(); // default values
-                     if (!vm->py_eq(args[2], vm->None))
-                         start = CAST(int, args[2]);
-                     if (!vm->py_eq(args[3], vm->None))
-                         stop = CAST(int, args[3]);
+                     int start = CAST_DEFAULT(int, args[2], 0);
+                     int stop = CAST_DEFAULT(int, args[3], self.dequeItems.size());
                      int index = self.findIndex(vm, obj, start, stop);
-                     if (index != -1)
-                         return VAR(index);
-                     else
-                         vm->ValueError(_CAST(Str &, vm->py_repr(obj)) + " is not in deque");
-                     return vm->None;
+                     if (index < 0) vm->ValueError(_CAST(Str &, vm->py_repr(obj)) + " is not in deque");
+                     return VAR(index);
                  });
         // NEW: returns the index of the given object in the deque
         vm->bind(type, "__contains__(self, obj) -> bool",
@@ -296,7 +290,7 @@ namespace pkpy
                          self.insertObj(false, false, index, obj); // this index shouldn't be fixed using vm->normalized_index, pass as is
                      return vm->None;
                  });
-        // NEW: removes the first occurence of the given object from the deque
+        // NEW: removes the first occurrence of the given object from the deque
         vm->bind(type, "remove(self, obj) -> None",
                  [](VM *vm, ArgsView args)
                  {
@@ -456,7 +450,7 @@ namespace pkpy
     /// @brief pops or removes an item from the deque
     /// @param front  if true, pop from the front of the deque
     /// @param back if true, pop from the back of the deque
-    /// @param item if front and back is not set, remove the first occurence of item from the deque
+    /// @param item if front and back is not set, remove the first occurrence of item from the deque
     /// @param vm is needed for the py_eq
     /// @return PyObject* if front or back is set, this is a pop operation and we return a PyObject*, if front and back are not set, this is a remove operation and we return the removed item or nullptr
     PyObject *PyDeque::popObj(bool front, bool back, PyObject *item, VM *vm)

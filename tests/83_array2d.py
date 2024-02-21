@@ -50,7 +50,7 @@ except IndexError:
 
 # test __iter__
 a_list = [[5, 0], [0, 0], [0, 0], [0, 6]]
-assert a_list == list(a)
+assert a_list == a.tolist()
 
 # test __len__
 assert len(a) == 4
@@ -68,8 +68,8 @@ assert repr(a) == f'array2d(2, 4)'
 
 # test map
 c = a.map(lambda x: x + 1)
-assert list(c) == [[6, 1], [1, 1], [1, 1], [1, 7]]
-assert list(a) == [[5, 0], [0, 0], [0, 0], [0, 6]]
+assert c.tolist() == [[6, 1], [1, 1], [1, 1], [1, 7]]
+assert a.tolist() == [[5, 0], [0, 0], [0, 0], [0, 6]]
 assert c.width == c.n_cols == 2
 assert c.height == c.n_rows == 4
 assert c.numel == 8
@@ -107,5 +107,62 @@ assert A().get(0, 0, default=2) == 0
 
 # test alive_neighbors
 a = array2d(3, 3, default=0)
-a.count_neighbors(0) == a
+a[1, 1] = 1
+"""     moore    von_neumann
+0 0 0   1 1 1    0 1 0
+0 1 0   1 0 1    1 0 1
+0 0 0   1 1 1    0 1 0
+"""
+moore_result = array2d(3, 3, default=1)
+moore_result[1, 1] = 0
 
+von_neumann_result = array2d(3, 3, default=0)
+von_neumann_result[0, 1] = von_neumann_result[1, 0] = von_neumann_result[1, 2] = von_neumann_result[2, 1] = 1
+a.count_neighbors(0, 'moore') == moore_result
+a.count_neighbors(0, 'von_neumann') == von_neumann_result
+
+# test slice get
+a = array2d(5, 5, default=0)
+b = array2d(3, 2, default=1)
+
+assert a[1:4, 1:4] == array2d(3, 3, default=0)
+assert a[1:4, 1:3] == array2d(3, 2, default=0)
+assert a[1:4, 1:3] != b
+a[1:4, 1:3] = b
+assert a[1:4, 1:3] == b
+"""
+0 0 0 0 0
+0 1 1 1 0
+0 1 1 1 0
+0 0 0 0 0
+0 0 0 0 0
+"""
+assert a.count(1) == 3*2
+
+assert a.find_bounding_rect(1) == (1, 1, 3, 2)
+assert a.find_bounding_rect(0) == (0, 0, 5, 5)
+assert a.find_bounding_rect(2) == None
+
+
+a = array2d(3, 2, default='?')
+# int/float/str/bool/None
+
+for value in [0, 0.0, '0', False, None]:
+    a[0:2, 0:1] = value
+    assert a[2, 1] == '?'
+    assert a[0, 0] == value
+
+a[:, :] = 3
+assert a == array2d(3, 2, default=3)
+
+try:
+    a[:, :] = array2d(1, 1)
+    exit(1)
+except ValueError:
+    pass
+
+try:
+    a[:, :] = []
+    exit(1)
+except TypeError:
+    pass

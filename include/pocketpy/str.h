@@ -13,7 +13,7 @@ struct Str{
     int size;
     bool is_ascii;
     char* data;
-    char _inlined[24];
+    char _inlined[16];
 
     bool is_inlined() const { return data == _inlined; }
 
@@ -77,8 +77,8 @@ struct Str{
     int rindex(const Str& sub, int start=0) const;
     Str replace(char old, char new_) const;
     Str replace(const Str& old, const Str& new_, int count=-1) const;
-    std::vector<std::string_view> split(const Str& sep) const;
-    std::vector<std::string_view> split(char sep) const;
+    pod_vector<std::string_view> split(const Str& sep) const;
+    pod_vector<std::string_view> split(char sep) const;
     int count(const Str& sub) const;
 
     /*************unicode*************/

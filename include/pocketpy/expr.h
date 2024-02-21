@@ -10,7 +10,53 @@ namespace pkpy{
 
 struct CodeEmitContext;
 struct Expr;
-typedef std::unique_ptr<Expr> Expr_;
+
+#define PK_POOL128_DELETE(ptr) if(ptr != nullptr) { ptr->~T(); pool128_dealloc(ptr); ptr = nullptr; }
+
+template<typename T>
+class unique_ptr_128{
+    T* ptr;
+public:
+    unique_ptr_128(): ptr(nullptr) {}
+    unique_ptr_128(T* ptr): ptr(ptr) {}
+    T* operator->() const { return ptr; }
+    T* get() const { return ptr; }
+    T* detach() { T* p = ptr; ptr = nullptr; return p; }
+
+    unique_ptr_128(const unique_ptr_128&) = delete;
+    unique_ptr_128& operator=(const unique_ptr_128&) = delete;
+
+    bool operator==(std::nullptr_t) const { return ptr == nullptr; }
+    bool operator!=(std::nullptr_t) const { return ptr != nullptr; }
+
+    ~unique_ptr_128(){ PK_POOL128_DELETE(ptr) }
+
+    template<typename U>
+    unique_ptr_128(unique_ptr_128<U>&& other): ptr(other.detach()) {}
+
+    operator bool() const { return ptr != nullptr; }
+
+    template<typename U>
+    unique_ptr_128& operator=(unique_ptr_128<U>&& other) {
+        PK_POOL128_DELETE(ptr)
+        ptr = other.detach();
+        return *this;
+    }
+
+    unique_ptr_128& operator=(std::nullptr_t) {
+        PK_POOL128_DELETE(ptr)
+        ptr = nullptr;
+        return *this;
+    }
+};
+
+typedef unique_ptr_128<Expr> Expr_;
+typedef small_vector<Expr_, 4> Expr_vector;
+
+template<>
+struct TriviallyRelocatable<Expr_>{
+    constexpr static bool value = true;
+};
 
 struct Expr{
     int line = 0;
@@ -27,13 +73,11 @@ struct Expr{
 
     // for OP_DELETE_XXX
     [[nodiscard]] virtual bool emit_del(CodeEmitContext* ctx) {
-        PK_UNUSED(ctx);
         return false;
     }
 
     // for OP_STORE_XXX
     [[nodiscard]] virtual bool emit_store(CodeEmitContext* ctx) {
-        PK_UNUSED(ctx);
         return false;
     }
 };
@@ -42,7 +86,7 @@ struct CodeEmitContext{
     VM* vm;
     FuncDecl_ func;     // optional
     CodeObject_ co;     // 1 CodeEmitContext <=> 1 CodeObject_
-    // some bugs on MSVC (error C2280) when using std::vector<Expr_>
+    // some bugs on MSVC (error C2280) when using Expr_vector
     // so we use stack_no_copy instead
     stack_no_copy<Expr_> s_expr;
     int level;
@@ -60,7 +104,7 @@ struct CodeEmitContext{
     CodeBlock* enter_block(CodeBlockType type);
     void exit_block();
     void emit_expr();   // clear the expression stack and generate bytecode
-    int emit_(Opcode opcode, uint16_t arg, int line);
+    int emit_(Opcode opcode, uint16_t arg, int line, bool is_virtual=false);
     void patch_jump(int index);
     bool add_label(StrName name);
     int add_varname(StrName name);
@@ -171,8 +215,8 @@ struct DictItemExpr: Expr{
 };
 
 struct SequenceExpr: Expr{
-    std::vector<Expr_> items;
-    SequenceExpr(std::vector<Expr_>&& items): items(std::move(items)) {}
+    Expr_vector items;
+    SequenceExpr(Expr_vector&& items): items(std::move(items)) {}
     virtual Opcode opcode() const = 0;
 
     void emit_(CodeEmitContext* ctx) override {
@@ -298,7 +342,7 @@ struct AttribExpr: Expr{
 
 struct CallExpr: Expr{
     Expr_ callable;
-    std::vector<Expr_> args;
+    Expr_vector args;
     // **a will be interpreted as a special keyword argument: {"**": a}
     std::vector<std::pair<Str, Expr_>> kwargs;
     void emit_(CodeEmitContext* ctx) override;
@@ -326,7 +370,7 @@ struct BinaryExpr: Expr{
     Expr_ lhs;
     Expr_ rhs;
     bool is_compare() const override;
-    void _emit_compare(CodeEmitContext* ctx, std::vector<int>& jmps);
+    void _emit_compare(CodeEmitContext* ctx, pod_vector<int>& jmps);
     void emit_(CodeEmitContext* ctx) override;
 };
 

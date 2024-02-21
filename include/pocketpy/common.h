@@ -18,6 +18,7 @@
 #include <type_traits>
 #include <random>
 #include <deque>
+#include <initializer_list>
 
 #define PK_VERSION				"1.4.1"
 
@@ -232,5 +233,7 @@ inline const char* kPlatformStrings[] = {
     "linux",        // 5
     "unknown"       // 6
 };
+
+#define PK_SLICE_LOOP(i, start, stop, step) for(int i=start; step>0?i<stop:i>stop; i+=step)
 
 } // namespace pkpy

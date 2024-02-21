@@ -29,19 +29,17 @@ namespace pkpy{
 #define DEF_NATIVE_2(ctype, ptype)                                      \
     template<> inline ctype py_cast<ctype>(VM* vm, PyObject* obj) {     \
         vm->check_non_tagged_type(obj, vm->ptype);                      \
-        return PK_OBJ_GET(ctype, obj);                                     \
+        return PK_OBJ_GET(ctype, obj);                                  \
     }                                                                   \
     template<> inline ctype _py_cast<ctype>(VM* vm, PyObject* obj) {    \
-        PK_UNUSED(vm);                                                  \
-        return PK_OBJ_GET(ctype, obj);                                     \
+        return PK_OBJ_GET(ctype, obj);                                  \
     }                                                                   \
     template<> inline ctype& py_cast<ctype&>(VM* vm, PyObject* obj) {   \
         vm->check_non_tagged_type(obj, vm->ptype);                      \
-        return PK_OBJ_GET(ctype, obj);                                     \
+        return PK_OBJ_GET(ctype, obj);                                  \
     }                                                                   \
     template<> inline ctype& _py_cast<ctype&>(VM* vm, PyObject* obj) {  \
-        PK_UNUSED(vm);                                                  \
-        return PK_OBJ_GET(ctype, obj);                                     \
+        return PK_OBJ_GET(ctype, obj);                                  \
     }                                                                   \
     inline PyObject* py_var(VM* vm, const ctype& value) { return vm->heap.gcnew<ctype>(vm->ptype, value);}     \
     inline PyObject* py_var(VM* vm, ctype&& value) { return vm->heap.gcnew<ctype>(vm->ptype, std::move(value));}
@@ -56,7 +54,7 @@ struct PyTypeInfo{
     StrName name;
     bool subclass_enabled;
 
-    std::vector<StrName> annotated_fields;
+    pod_vector<StrName> annotated_fields = {};
 
     // cached special methods
     // unary operators
@@ -105,14 +103,6 @@ struct PyTypeInfo{
 
 };
 
-struct FrameId{
-    std::vector<pkpy::Frame>* data;
-    int index;
-    FrameId(std::vector<pkpy::Frame>* data, int index) : data(data), index(index) {}
-    Frame* operator->() const { return &data->operator[](index); }
-    Frame* get() const { return &data->operator[](index); }
-};
-
 typedef void(*PrintFunc)(const char*, int);
 typedef unsigned char* (*ImportHandlerFunc)(VM*, const char*, int, int*);
 
@@ -125,7 +115,7 @@ class VM {
 public:
     ManagedHeap heap;
     ValueStack s_data;
-    stack< Frame > callstack;
+    stack_no_copy<Frame, CallstackContainer> callstack;
     std::vector<PyTypeInfo> _all_types;
     
     NameDict _modules;                                 // loaded modules
@@ -133,7 +123,7 @@ public:
 
     struct{
         PyObject* error;
-        stack<ArgsView> s_view;
+        stack_no_copy<ArgsView> s_view;
     } _c;
 
     PyObject* None;
@@ -328,13 +318,12 @@ public:
     template<typename T, typename __T>
     PyObject* bind_notimplemented_constructor(__T&& type) {
         return bind_constructor<-1>(std::forward<__T>(type), [](VM* vm, ArgsView args){
-            PK_UNUSED(args);
             vm->NotImplementedError();
             return vm->None;
         });
     }
 
-    int normalized_index(int index, int size);
+    i64 normalized_index(i64 index, int size);
     PyObject* py_next(PyObject* obj);
     bool py_callable(PyObject* obj);
     
@@ -400,7 +389,7 @@ public:
 
     struct ImportContext{
         std::vector<Str> pending;
-        std::vector<bool> pending_is_init;   // a.k.a __init__.py
+        pod_vector<bool> pending_is_init;   // a.k.a __init__.py
         struct Temp{
             ImportContext* ctx;
             Temp(ImportContext* ctx, Str name, bool is_init) : ctx(ctx){
@@ -420,7 +409,7 @@ public:
 
     ImportContext _import_context;
     PyObject* py_import(Str path, bool throw_err=true);
-    ~VM();
+    virtual ~VM();
 
 #if PK_DEBUG_CEVAL_STEP
     void _log_s_data(const char* title = nullptr);
@@ -485,7 +474,6 @@ template<> inline T py_cast<T>(VM* vm, PyObject* obj){  \
     return 0;                                               \
 }                                                           \
 template<> inline T _py_cast<T>(VM* vm, PyObject* obj){     \
-    PK_UNUSED(vm);                                          \
     if(is_small_int(obj)) return (T)(PK_BITS(obj) >> 2);    \
     return (T)PK_OBJ_GET(i64, obj);                         \
 }
@@ -546,12 +534,10 @@ PY_VAR_INT(unsigned long long)
 #undef PY_VAR_INT
 
 inline PyObject* py_var(VM* vm, float _val){
-    PK_UNUSED(vm);
     return tag_float(static_cast<f64>(_val));
 }
 
 inline PyObject* py_var(VM* vm, double _val){
-    PK_UNUSED(vm);
     return tag_float(static_cast<f64>(_val));
 }
 
@@ -603,7 +589,6 @@ inline PyObject* py_var(VM* vm, std::string_view val){
 }
 
 inline PyObject* py_var(VM* vm, NoReturn val){
-    PK_UNUSED(val);
     return vm->None;
 }
 
@@ -632,8 +617,6 @@ PyObject* VM::bind_func(PyObject* obj, Str name, NativeFuncC fn, UserData userda
     obj->attr().set(name, nf);
     return nf;
 }
-
-/***************************************************/
 
 template<typename T>
 PyObject* PyArrayGetItem(VM* vm, PyObject* obj, PyObject* index){

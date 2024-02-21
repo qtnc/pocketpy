@@ -281,11 +281,11 @@ void init_builtins(VM* _vm) {
     _vm->bind_func<1>(_vm->builtins, "dir", [](VM* vm, ArgsView args) {
         std::set<StrName> names;
         if(!is_tagged(args[0]) && args[0]->is_attr_valid()){
-            std::vector<StrName> keys = args[0]->attr().keys();
+            auto keys = args[0]->attr().keys();
             names.insert(keys.begin(), keys.end());
         }
         const NameDict& t_attr = vm->_t(args[0])->attr();
-        std::vector<StrName> keys = t_attr.keys();
+        auto keys = t_attr.keys();
         names.insert(keys.begin(), keys.end());
         List ret;
         for (StrName name : names) ret.push_back(VAR(name.sv()));
@@ -532,7 +532,7 @@ void init_builtins(VM* _vm) {
             vm->parse_int_slice(s, self.u8_length(), start, stop, step);
             return VAR(self.u8_slice(start, stop, step));
         }
-        int i = CAST(int, _1);
+        i64 i = CAST(i64, _1);
         i = vm->normalized_index(i, self.u8_length());
         return VAR(self.u8_getitem(i));
     });
@@ -550,7 +550,7 @@ void init_builtins(VM* _vm) {
         const Str& self = _CAST(Str&, args[0]);
         const Str& sep = CAST(Str&, args[1]);
         if(sep.empty()) vm->ValueError("empty separator");
-        std::vector<std::string_view> parts;
+        pod_vector<std::string_view> parts;
         if(sep.size == 1){
             parts = self.split(sep[0]);
         }else{
@@ -563,7 +563,7 @@ void init_builtins(VM* _vm) {
 
     _vm->bind(_vm->_t(VM::tp_str), "splitlines(self)", [](VM* vm, ArgsView args) {
         const Str& self = _CAST(Str&, args[0]);
-        std::vector<std::string_view> parts;
+        pod_vector<std::string_view> parts;
         parts = self.split('\n');
         List ret(parts.size());
         for(int i=0; i<parts.size(); i++) ret[i] = VAR(Str(parts[i]));
@@ -576,11 +576,12 @@ void init_builtins(VM* _vm) {
         return VAR(self.count(s));
     });
 
-    _vm->bind_method<1>(VM::tp_str, "index", [](VM* vm, ArgsView args) {
+    _vm->bind(_vm->_t(VM::tp_str), "index(self, value, __start=0)", [](VM* vm, ArgsView args) {
         const Str& self = _CAST(Str&, args[0]);
-        const Str& sub = CAST(Str&, args[1]);
-        int index = self.index(sub);
-        if(index == -1) vm->ValueError("substring not found");
+        const Str& value = CAST(Str&, args[1]);
+        int start = CAST(int, args[2]);
+        int index = self.index(value, start);
+        if(index < 0) vm->ValueError("substring not found");
         return VAR(index);
     });
 
@@ -592,10 +593,11 @@ void init_builtins(VM* _vm) {
         return VAR(index);
     });
 
-    _vm->bind_method<1>(VM::tp_str, "find", [](VM* vm, ArgsView args) {
+    _vm->bind(_vm->_t(VM::tp_str), "find(self, value, __start=0)", [](VM* vm, ArgsView args) {
         const Str& self = _CAST(Str&, args[0]);
-        const Str& sub = CAST(Str&, args[1]);
-        return VAR(self.index(sub));
+        const Str& value = CAST(Str&, args[1]);
+        int start = CAST(int, args[2]);
+        return VAR(self.index(value, start));
     });
 
     _vm->bind_method<1>(VM::tp_str, "rfind", [](VM* vm, ArgsView args) {
@@ -799,10 +801,11 @@ void init_builtins(VM* _vm) {
         return vm->True;
     });
 
-    _vm->bind_method<1>(VM::tp_list, "index", [](VM* vm, ArgsView args) {
+    _vm->bind(_vm->_t(VM::tp_list), "index(self, value, __start=0)", [](VM* vm, ArgsView args) {
         List& self = _CAST(List&, args[0]);
         PyObject* obj = args[1];
-        for(int i=0; i<self.size(); i++){
+        int start = CAST(int, args[2]);
+        for(int i=start; i<self.size(); i++){
             if(vm->py_eq(self[i], obj)) return VAR(i);
         }
         vm->ValueError(_CAST(Str&, vm->py_repr(obj)) + " is not in list");
@@ -829,7 +832,7 @@ void init_builtins(VM* _vm) {
             return self.popx_back();
         }
         if(args.size() == 1+1){
-            int index = CAST(int, args[1]);
+            i64 index = CAST(i64, args[1]);
             index = vm->normalized_index(index, self.size());
             PyObject* ret = self[index];
             self.erase(index);
@@ -951,13 +954,13 @@ if (step==1) self.replace(start, stop, list.data(), list.data()+list.size());
 else for (int i=start, j=0, n=list.size(); i<stop && j<n; i+=step, j++) self[i] = list[j];
 return;
 }
-        int i = CAST(int, _1);
+        i64 i = CAST(i64, _1);
         i = vm->normalized_index(i, self.size());
         self[i] = _2;
     });
     _vm->bind__delitem__(VM::tp_list, [](VM* vm, PyObject* _0, PyObject* _1){
         List& self = _CAST(List&, _0);
-        int i = CAST(int, _1);
+        i64 i = CAST(i64, _1);
         i = vm->normalized_index(i, self.size());
         self.erase(i);
     });
@@ -1051,18 +1054,18 @@ return;
     // tp_bytes
     _vm->bind_constructor<2>(_vm->_t(VM::tp_bytes), [](VM* vm, ArgsView args){
         List& list = CAST(List&, args[1]);
-        std::vector<unsigned char> buffer(list.size());
+        unsigned char* buffer = new unsigned char[list.size()];
         for(int i=0; i<list.size(); i++){
             i64 b = CAST(i64, list[i]);
             if(b<0 || b>255) vm->ValueError("byte must be in range[0, 256)");
             buffer[i] = (char)b;
         }
-        return VAR(Bytes(buffer));
+        return VAR(Bytes(buffer, list.size()));
     });
 
     _vm->bind__getitem__(VM::tp_bytes, [](VM* vm, PyObject* obj, PyObject* index) {
         const Bytes& self = _CAST(Bytes&, obj);
-        int i = CAST(int, index);
+        i64 i = CAST(i64, index);
         i = vm->normalized_index(i, self.size());
         return VAR(self[i]);
     });
@@ -1135,15 +1138,15 @@ return;
     _vm->bind_method<0>(VM::tp_mappingproxy, "values", [](VM* vm, ArgsView args) {
         MappingProxy& self = _CAST(MappingProxy&, args[0]);
         List values;
-        for(auto& item : self.attr().items()) values.push_back(item.second);
+        for(auto [k, v] : self.attr().items()) values.push_back(v);
         return VAR(std::move(values));
     });
 
     _vm->bind_method<0>(VM::tp_mappingproxy, "items", [](VM* vm, ArgsView args) {
         MappingProxy& self = _CAST(MappingProxy&, args[0]);
         List items;
-        for(auto& item : self.attr().items()){
-            PyObject* t = VAR(Tuple(VAR(item.first.sv()), item.second));
+        for(auto [k, v] : self.attr().items()){
+            PyObject* t = VAR(Tuple(VAR(k.sv()), v));
             items.push_back(std::move(t));
         }
         return VAR(std::move(items));
@@ -1183,11 +1186,11 @@ return;
         ss << "mappingproxy({";
         bool first = true;
         vm->_repr_recursion_set.insert(_0);
-        for(auto& item : self.attr().items()){
+        for(auto [k, v] : self.attr().items()){
             if(!first) ss << ", ";
             first = false;
-            ss << item.first.escape() << ": ";
-            ss << CAST(Str, vm->py_repr(item.second));
+            ss << k.escape() << ": ";
+            ss << CAST(Str, vm->py_repr(v));
         }
         vm->_repr_recursion_set.erase(_0);
         ss << "})";
@@ -1463,7 +1466,6 @@ void VM::post_init(){
 
     // type
     bind__getitem__(tp_type, [](VM* vm, PyObject* self, PyObject* _){
-        PK_UNUSED(_);
         return self;        // for generics
     });
 

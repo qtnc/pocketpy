@@ -14,7 +14,7 @@ int utf8len(unsigned char c, bool suppress){
 }
 
 #define PK_STR_ALLOCATE()                                   \
-        if(this->size < sizeof(this->_inlined)){            \
+        if(this->size < (int)sizeof(this->_inlined)){       \
             this->data = this->_inlined;                    \
         }else{                                              \
             this->data = (char*)pool64_alloc(this->size+1); \
@@ -340,9 +340,9 @@ int utf8len(unsigned char c, bool suppress){
     Str Str::u8_slice(int start, int stop, int step) const{
         SStream ss;
         if(is_ascii){
-            for(int i=start; step>0?i<stop:i>stop; i+=step) ss << data[i];
+            PK_SLICE_LOOP(i, start, stop, step) ss << data[i];
         }else{
-            for(int i=start; step>0?i<stop:i>stop; i+=step) ss << u8_getitem(i);
+            PK_SLICE_LOOP(i, start, stop, step) ss << u8_getitem(i);
         }
         return ss.str();
     }
@@ -351,8 +351,8 @@ int utf8len(unsigned char c, bool suppress){
         return _byte_index_to_unicode(size);
     }
 
-    std::vector<std::string_view> Str::split(const Str& sep) const{
-        std::vector<std::string_view> result;
+    pod_vector<std::string_view> Str::split(const Str& sep) const{
+        pod_vector<std::string_view> result;
         std::string_view tmp;
         int start = 0;
         while(true){
@@ -367,8 +367,8 @@ int utf8len(unsigned char c, bool suppress){
         return result;
     }
 
-    std::vector<std::string_view> Str::split(char sep) const{
-        std::vector<std::string_view> result;
+    pod_vector<std::string_view> Str::split(char sep) const{
+        pod_vector<std::string_view> result;
         int i = 0;
         for(int j = 0; j < size; j++){
             if(data[j] == sep){

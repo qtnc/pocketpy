@@ -20,7 +20,6 @@ struct FastLocals{
     PyObject* operator[](int i) const { return a[i]; }
 
     FastLocals(const CodeObject* co, PyObject** a): varnames_inv(&co->varnames_inv), a(a) {}
-    FastLocals(const FastLocals& other): varnames_inv(other.varnames_inv), a(other.a) {}
 
     PyObject** try_get_name(StrName name);
     NameDict_ to_namedict();
@@ -125,6 +124,16 @@ struct Frame {
         // Frame could be stored in a generator, so mark _callable for safety
         if(_callable != nullptr) PK_OBJ_MARK(_callable);
     }
+};
+
+using CallstackContainer = small_vector_no_copy_and_move<Frame, 16>;
+
+struct FrameId{
+    CallstackContainer* data;
+    int index;
+    FrameId(CallstackContainer* data, int index) : data(data), index(index) {}
+    Frame* operator->() const { return &data->operator[](index); }
+    Frame* get() const { return &data->operator[](index); }
 };
 
 }; // namespace pkpy

@@ -58,17 +58,24 @@ using CodeObject_ = std::shared_ptr<CodeObject>;
 using FuncDecl_ = std::shared_ptr<FuncDecl>;
 
 struct CodeObject {
+    struct LineInfo{
+        int lineno;             // line number for each bytecode
+        bool is_virtual;        // whether this bytecode is virtual (not in source code)
+    };
+
     std::shared_ptr<SourceData> src;
     Str name;
-    bool is_generator = false;
+    bool is_generator;
 
     std::vector<Bytecode> codes;
-    std::vector<int> iblocks;    // block index for each bytecode
-    std::vector<int> lines;     // line number for each bytecode
-    List consts;
-    std::vector<StrName> varnames;      // local variables
+    std::vector<int> iblocks;       // block index for each bytecode
+    std::vector<LineInfo> lines;
+    
+    small_vector_no_copy_and_move<PyObject*, 8> consts;
+
+    pod_vector<StrName> varnames;      // local variables
     NameDictInt varnames_inv;
-    std::vector<CodeBlock> blocks = { CodeBlock(CodeBlockType::NO_BLOCK, -1, 0, 0) };
+    std::vector<CodeBlock> blocks;
     NameDictInt labels;
     std::vector<FuncDecl_> func_decls;
 
@@ -90,8 +97,10 @@ struct FuncDecl {
         PyObject* value;        // default value
     };
     CodeObject_ code;           // code object of this function
-    std::vector<int> args;      // indices in co->varnames
-    std::vector<KwArg> kwargs;  // indices in co->varnames
+
+    small_vector_no_copy_and_move<int, 6> args;      // indices in co->varnames
+    small_vector_no_copy_and_move<KwArg, 6> kwargs;  // indices in co->varnames
+
     int starred_arg = -1;       // index in co->varnames, -1 if no *arg
     int starred_kwarg = -1;     // index in co->varnames, -1 if no **kwarg
     bool nested = false;        // whether this function is nested
@@ -104,7 +113,7 @@ struct FuncDecl {
 
     void add_kwarg(int index, StrName key, PyObject* value){
         kw_to_index.set(key, index);
-        kwargs.push_back({index, key, value});
+        kwargs.push_back(KwArg{index, key, value});
     }
     
     void _gc_mark() const;

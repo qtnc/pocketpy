@@ -41,7 +41,7 @@ namespace pkpy{
 
         if(curr_type == CodeBlockType::FOR_LOOP){
             // add a no op here to make block check work
-            emit_(OP_NO_OP, BC_NOARG, BC_KEEPLINE);
+            emit_(OP_NO_OP, BC_NOARG, BC_KEEPLINE, true);
         }
     }
 
@@ -52,14 +52,14 @@ namespace pkpy{
         expr->emit_(this);
     }
 
-    int CodeEmitContext::emit_(Opcode opcode, uint16_t arg, int line) {
+    int CodeEmitContext::emit_(Opcode opcode, uint16_t arg, int line, bool is_virtual) {
         co->codes.push_back(Bytecode{(uint8_t)opcode, arg});
         co->iblocks.push_back(curr_block_i);
-        co->lines.push_back(line);
+        co->lines.push_back(CodeObject::LineInfo{line, is_virtual});
         int i = co->codes.size() - 1;
-        if(line==BC_KEEPLINE){
-            if(i>=1) co->lines[i] = co->lines[i-1];
-            else co->lines[i] = 1;
+        if(line == BC_KEEPLINE){
+            if(i >= 1) co->lines[i].lineno = co->lines[i-1].lineno;
+            else co->lines[i].lineno = 1;
         }
         return i;
     }
@@ -604,7 +604,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
                 ctx->emit_(OP_CALL_TP, 0, line);
             }
         }else{
-            // vectorcall protocal
+            // vectorcall protocol
             for(auto& item: args) item->emit_(ctx);
             for(auto& item: kwargs){
                 uint16_t index = StrName(item.first.sv()).index;
@@ -626,7 +626,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
         }
     }
 
-    void BinaryExpr::_emit_compare(CodeEmitContext* ctx, std::vector<int>& jmps){
+    void BinaryExpr::_emit_compare(CodeEmitContext* ctx, pod_vector<int>& jmps){
         if(lhs->is_compare()){
             static_cast<BinaryExpr*>(lhs.get())->_emit_compare(ctx, jmps);
         }else{
@@ -650,7 +650,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
     }
 
     void BinaryExpr::emit_(CodeEmitContext* ctx) {
-        std::vector<int> jmps;
+        pod_vector<int> jmps;
         if(is_compare() && lhs->is_compare()){
             // (a < b) < c
             static_cast<BinaryExpr*>(lhs.get())->_emit_compare(ctx, jmps);

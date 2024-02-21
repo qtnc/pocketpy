@@ -69,23 +69,12 @@ namespace pkpy{
     VM::VM(bool enable_os) : heap(this), enable_os(enable_os) {
         this->vm = this;
         this->_c.error = nullptr;
-        _stdout = [](const char* buf, int size) {
-            std::cout.write(buf, size);
-        };
-        _stderr = [](const char* buf, int size) {
-            std::cerr.write(buf, size);
-        };
-        callstack.reserve(8);
+        _stdout = [](const char* buf, int size) { std::cout.write(buf, size); };
+        _stderr = [](const char* buf, int size) { std::cerr.write(buf, size); };
         _main = nullptr;
         _last_exception = nullptr;
         _io_handler = nullptr;
-        _import_handler = [](VM* vm, const char* name_p, int name_size, int* out_size) -> unsigned char*{
-            PK_UNUSED(vm);
-            PK_UNUSED(name_p);
-            PK_UNUSED(name_size);
-            PK_UNUSED(out_size);
-            return nullptr;
-        };
+        _import_handler = [](VM* vm, const char* name_p, int name_size, int* out_size) -> unsigned char*{ return nullptr; };
         init_builtin_types();
     }
 
@@ -135,7 +124,7 @@ namespace pkpy{
 #if PK_DEBUG_EXTRA_CHECK
         if(callstack.empty()) PK_FATAL_ERROR();
 #endif
-        return FrameId(&callstack.data(), callstack.size()-1);
+        return FrameId(&callstack.container(), callstack.size()-1);
     }
 
     void VM::_pop_frame(){
@@ -256,7 +245,7 @@ namespace pkpy{
         return false;
     }
 
-    int VM::normalized_index(int index, int size){
+    i64 VM::normalized_index(i64 index, int size){
         if(index < 0) index += size;
         if(index < 0 || index >= size){
             IndexError(std::to_string(index) + " not in [0, " + std::to_string(size) + ")");
@@ -283,7 +272,7 @@ namespace pkpy{
 
     PyObject* VM::py_import(Str path, bool throw_err){
         if(path.empty()) vm->ValueError("empty module name");
-        static auto f_join = [](const std::vector<std::string_view>& cpnts){
+        static auto f_join = [](const pod_vector<std::string_view>& cpnts){
             SStream ss;
             for(int i=0; i<cpnts.size(); i++){
                 if(i != 0) ss << ".";
@@ -299,7 +288,7 @@ namespace pkpy{
             Str curr_path = _import_context.pending.back();
             bool curr_is_init = _import_context.pending_is_init.back();
             // convert relative path to absolute path
-            std::vector<std::string_view> cpnts = curr_path.split('.');
+            pod_vector<std::string_view> cpnts = curr_path.split('.');
             int prefix = 0;     // how many dots in the prefix
             for(int i=0; i<path.length(); i++){
                 if(path[i] == '.') prefix++;
@@ -319,7 +308,7 @@ namespace pkpy{
         PyObject* ext_mod = _modules.try_get(name);
         if(ext_mod != nullptr) return ext_mod;
 
-        std::vector<std::string_view> path_cpnts = path.split('.');
+        pod_vector<std::string_view> path_cpnts = path.split('.');
         // check circular import
         if(_import_context.pending.size() > 128){
             ImportError("maximum recursion depth exceeded while importing");
@@ -605,7 +594,7 @@ Str VM::disassemble(CodeObject_ co){
         return s + std::string(n - s.length(), ' ');
     };
 
-    std::vector<int> jumpTargets;
+    pod_vector<int> jumpTargets;
     for(auto byte : co->codes){
         if(byte.op == OP_JUMP_ABSOLUTE || byte.op == OP_POP_JUMP_IF_FALSE || byte.op == OP_SHORTCUT_IF_FALSE_OR_POP || byte.op == OP_FOR_ITER){
             jumpTargets.push_back(byte.arg);
@@ -620,11 +609,11 @@ Str VM::disassemble(CodeObject_ co){
     int prev_line = -1;
     for(int i=0; i<co->codes.size(); i++){
         const Bytecode& byte = co->codes[i];
-        Str line = std::to_string(co->lines[i]);
-        if(co->lines[i] == prev_line) line = "";
+        Str line = std::to_string(co->lines[i].lineno);
+        if(co->lines[i].lineno == prev_line) line = "";
         else{
             if(prev_line != -1) ss << "\n";
-            prev_line = co->lines[i];
+            prev_line = co->lines[i].lineno;
         }
 
         std::string pointer;
@@ -634,7 +623,9 @@ Str VM::disassemble(CodeObject_ co){
             pointer = "   ";
         }
         ss << pad(line, 8) << pointer << pad(std::to_string(i), 3);
-        ss << " " << pad(OP_NAMES[byte.op], 25) << " ";
+        std::string bc_name(OP_NAMES[byte.op]);
+        if(co->lines[i].is_virtual) bc_name += '*';
+        ss << " " << pad(bc_name, 25) << " ";
         // ss << pad(byte.arg == -1 ? "" : std::to_string(byte.arg), 5);
         std::string argStr = _opcode_argstr(this, byte, co.get());
         ss << argStr;
@@ -1264,7 +1255,7 @@ void VM::_raise(bool re_raise){
 
     int actual_ip = frame->_ip;
     if(e._ip_on_error >= 0 && e._code_on_error == (void*)frame->co) actual_ip = e._ip_on_error;
-    int current_line = frame->co->lines[actual_ip];         // current line
+    int current_line = frame->co->lines[actual_ip].lineno;         // current line
     auto current_f_name = frame->co->name.sv();             // current function name
     if(frame->_callable == nullptr) current_f_name = "";    // not in a function
     e.st_push(frame->co->src, current_line, nullptr, current_f_name);
@@ -1275,7 +1266,7 @@ void VM::_raise(bool re_raise){
 
 void ManagedHeap::mark() {
     for(PyObject* obj: _no_gc) PK_OBJ_MARK(obj);
-    for(auto& frame : vm->callstack.data()) frame._gc_mark();
+    for(auto& frame : vm->callstack.container()) frame._gc_mark();
     for(PyObject* obj: vm->s_data) PK_OBJ_MARK(obj);
     for(auto [_, co]: vm->_cached_codes) co->_gc_mark();
     if(vm->_last_exception) PK_OBJ_MARK(vm->_last_exception);
