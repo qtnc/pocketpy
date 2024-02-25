@@ -479,8 +479,6 @@ add_token_2('=', TK("not"), TK("!="));
     }
 
     std::vector<Token> Lexer::run() {
-        PK_ASSERT(!used)
-        used = true;
         while (lex_one_token());
         return std::move(nexts);
     }

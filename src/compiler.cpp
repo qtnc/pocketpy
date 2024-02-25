@@ -318,6 +318,25 @@ return;
         ctx()->s_expr.push(std::move(g));
     }
 
+    void Compiler::consume_comp(unique_ptr_128<CompExpr> ce, Expr_ expr){
+        ce->expr = std::move(expr);
+do {
+CompExpr::Comp comp;
+        comp.vars = EXPR_VARS();
+        consume(TK("in"));
+        parse_expression(PREC_TERNARY + 1);
+        comp.iter = ctx()->s_expr.popx();
+        match_newlines_repl();
+        if(match(TK("if"))){
+            parse_expression(PREC_TERNARY + 1);
+            comp.cond = ctx()->s_expr.popx();
+        }
+ce->comps.emplace_back(std::move(comp));
+} while (match(TK("for")));
+        ctx()->s_expr.push(std::move(ce));
+        match_newlines_repl();
+    }
+
     void Compiler::exprList() {
         int line = prev().line;
         Expr_vector items;
@@ -328,7 +347,7 @@ return;
             items.push_back(ctx()->s_expr.popx());
             match_newlines_repl();
             if(items.size()==1 && match(TK("for"))){
-                _consume_comp<ListCompExpr>(std::move(items[0]));
+                consume_comp(make_expr<ListCompExpr>(), std::move(items[0]));
                 consume(TK("]"));
                 return;
             }
@@ -368,8 +387,8 @@ return;
             }
             match_newlines_repl();
             if(items.size()==1 && match(TK("for"))){
-                if(parsing_dict) _consume_comp<DictCompExpr>(std::move(items[0]));
-                else _consume_comp<SetCompExpr>(std::move(items[0]));
+                if(parsing_dict) consume_comp(make_expr<DictCompExpr>(), std::move(items[0]));
+                else consume_comp(make_expr<SetCompExpr>(), std::move(items[0]));
                 consume(TK("}"));
                 return;
             }
@@ -396,7 +415,7 @@ i = prev_i;
         match_newlines_repl();
 consume(TK("for"));
 Expr_ loopExpr = std::move(ctx()->s_expr.popx());
-                _consume_comp<GenCompExpr>(std::move(loopExpr));
+                consume_comp(make_expr<GenCompExpr>(), std::move(loopExpr));
 Expr_ bodyExpr = std::move(ctx()->s_expr.popx());
 bodyExpr->emit_(ctx());
         pop_context();
@@ -1214,15 +1233,13 @@ __EAT_DOTS_END:
     Compiler::Compiler(VM* vm, std::string_view source, const Str& filename, CompileMode mode, bool unknown_global_scope)
             :lexer(vm, std::make_shared<SourceData>(source, filename, mode)){
         this->vm = vm;
-        this->used = false;
         this->unknown_global_scope = unknown_global_scope;
         init_pratt_rules();
     }
 
 
     CodeObject_ Compiler::compile(){
-        PK_ASSERT(!used)
-        used = true;
+        PK_ASSERT(i == 0)       // make sure it is the first time to compile
 
         tokens = lexer.run();
         CodeObject_ code = push_global_context();

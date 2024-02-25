@@ -25,7 +25,6 @@ class Compiler {
     stack_no_copy<CodeEmitContext> contexts;
     VM* vm;
     bool unknown_global_scope;     // for eval/exec() call
-    bool used;
     // for parsing token stream
     std::size_t i = 0;
     std::vector<Token> tokens;
@@ -69,27 +68,7 @@ class Compiler {
         return expr;
     }
 
-    template<typename T>
-    void _consume_comp(Expr_ expr){
-        static_assert(std::is_base_of<CompExpr, T>::value);
-        unique_ptr_128<CompExpr> ce = make_expr<T>();
-        ce->expr = std::move(expr);
-do {
-CompExpr::Comp comp;
-        comp.vars = EXPR_VARS();
-        consume(TK("in"));
-        parse_expression(PREC_TERNARY + 1);
-        comp.iter = ctx()->s_expr.popx();
-        match_newlines_repl();
-        if(match(TK("if"))){
-            parse_expression(PREC_TERNARY + 1);
-            comp.cond = ctx()->s_expr.popx();
-        }
-ce->comps.emplace_back(std::move(comp));
-} while (match(TK("for")));
-        ctx()->s_expr.push(std::move(ce));
-        match_newlines_repl();
-    }
+    void consume_comp(unique_ptr_128<CompExpr> ce, Expr_ expr);
 
     void exprLiteral();
     void exprLong();
