@@ -7,21 +7,13 @@
 namespace pkpy {
 
 #define PY_CLASS(T, mod, name)                  \
-    static Type _type(VM* vm) { return vm->_cxx_typeid_map[typeid(T)]; }    \
-    static void _check_type(VM* vm, PyObject* val){                         \
-        if(!vm->isinstance(val, T::_type(vm))){                             \
-            vm->TypeError("expected '" #mod "." #name "', got " + _type_name(vm, vm->_tp(val)).escape());  \
-        }                                                                   \
-    }                                                                       \
+    static Type _type(VM* vm) { return vm->_cxx_typeid_map[&typeid(T)]; }   \
     static PyObject* register_class(VM* vm, PyObject* mod, Type base=0) {   \
         std::string_view mod_name = PK_OBJ_GET(Str, mod->attr("__name__")).sv();   \
-        if(mod_name != #mod) {                                                     \
-            Str msg = _S("register_class() failed: ", mod_name, " != ", #mod);    \
-            throw std::runtime_error(msg.str());                            \
-        }                                                                   \
+        if(mod_name != #mod) throw std::runtime_error(_S("register_class() failed: ", mod_name, " != ", #mod).str()); \
         PyObject* type = vm->new_type_object(mod, #name, base);             \
         mod->attr().set(#name, type);                                       \
-        vm->_cxx_typeid_map[typeid(T)] = PK_OBJ_GET(Type, type);            \
+        vm->_cxx_typeid_map[&typeid(T)] = PK_OBJ_GET(Type, type);           \
         T::_register(vm, mod, type);                                        \
         return type;                                                        \
     }                                                                       
@@ -53,10 +45,6 @@ struct VoidP{
 
     static void _register(VM* vm, PyObject* mod, PyObject* type);
 };
-
-inline PyObject* py_var(VM* vm, const void* p){
-    return VAR_T(VoidP, p);
-}
 
 #define POINTER_VAR(Tp, NAME)    \
     inline PyObject* py_var(VM* vm, Tp val){    \

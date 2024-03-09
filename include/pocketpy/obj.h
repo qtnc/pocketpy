@@ -94,14 +94,9 @@ struct Slice {
     Slice(PyObject* start, PyObject* stop, PyObject* step) : start(start), stop(stop), step(step) {}
 };
 
-struct GCHeader {
-    bool enabled;   // whether this object is managed by GC
-    bool marked;    // whether this object is marked
-    GCHeader() : enabled(true), marked(false) {}
-};
-
 struct PyObject{
-    GCHeader gc;
+    bool gc_enabled;    // whether this object is managed by GC
+    bool gc_marked;     // whether this object is marked
     Type type;
     NameDict* _attr;
 
@@ -114,9 +109,13 @@ struct PyObject{
     virtual void _obj_gc_mark() = 0;
     virtual void* _value_ptr() = 0;
 
-    PyObject(Type type) : type(type), _attr(nullptr) {}
+    PyObject(Type type) : gc_enabled(true), gc_marked(false), type(type), _attr(nullptr) {}
 
-    virtual ~PyObject();
+    virtual ~PyObject(){
+        if(_attr == nullptr) return;
+        _attr->~NameDict();
+        pool128_dealloc(_attr);
+    }
 
     void _enable_instance_dict() {
         _attr = new(pool128_alloc<NameDict>()) NameDict();
@@ -129,7 +128,7 @@ struct PyObject{
 
 struct PySignalObject: PyObject {
     PySignalObject() : PyObject(0) {
-        gc.enabled = false;
+        gc_enabled = false;
     }
     void _obj_gc_mark() override {}
     void* _value_ptr() override { return nullptr; }
@@ -195,8 +194,8 @@ struct MappingProxy{
 #define PK_OBJ_GET(T, obj) (((Py_<T>*)(obj))->_value)
 
 #define PK_OBJ_MARK(obj) \
-    if(!is_tagged(obj) && !(obj)->gc.marked) {                      \
-        (obj)->gc.marked = true;                                    \
+    if(!is_tagged(obj) && !(obj)->gc_marked) {                      \
+        (obj)->gc_marked = true;                                    \
         (obj)->_obj_gc_mark();                                      \
         if((obj)->is_attr_valid()) gc_mark_namedict((obj)->attr()); \
     }
@@ -209,51 +208,8 @@ inline void gc_mark_namedict(NameDict& t){
 }
 
 StrName _type_name(VM* vm, Type type);
-
-template <typename, typename=void> struct is_py_class : std::false_type {};
-template <typename T> struct is_py_class<T, std::void_t<decltype(T::_type)>> : std::true_type {};
-
 template<typename T> T to_void_p(VM*, PyObject*);
-
-inline bool is_none (VM* vm, PyObject* obj);
-
-template<typename __T>
-__T py_cast(VM* vm, PyObject* obj) {
-    using T = std::decay_t<__T>;
-    if constexpr(std::is_enum_v<T>){
-        return (__T)py_cast<i64>(vm, obj);
-    }else if constexpr(std::is_pointer_v<T> && is_py_class<typename std::remove_pointer<T>::type>::value){
-using TNP = typename std::remove_pointer<T>::type;
-if (is_none(vm, obj)) return nullptr;
-        TNP::_check_type(vm, obj);
-        return &PK_OBJ_GET(TNP, obj);
-    }else if constexpr(std::is_pointer_v<T>){
-        return to_void_p<T>(vm, obj);
-    }else if constexpr(is_py_class<T>::value){
-        T::_check_type(vm, obj);
-        return PK_OBJ_GET(T, obj);
-    }else {
-        return Discarded();
-    }
-}
-
-template<typename __T>
-__T _py_cast(VM* vm, PyObject* obj) {
-    using T = std::decay_t<__T>;
-    if constexpr(std::is_enum_v<T>){
-        return (__T)_py_cast<i64>(vm, obj);
-    }else if constexpr(std::is_pointer_v<T> && is_py_class<typename std::remove_pointer<T>::type>::value){
-using TNP = typename std::remove_pointer<T>::type;
-if (is_none(vm, obj)) return nullptr;
-        return &PK_OBJ_GET(TNP, obj);
-    }else if constexpr(std::is_pointer_v<__T>){
-        return to_void_p<__T>(vm, obj);
-    }else if constexpr(is_py_class<T>::value){
-        return PK_OBJ_GET(T, obj);
-    }else {
-        return Discarded();
-    }
-}
+PyObject* from_void_p(VM*, void*);
 
 #define VAR(x) py_var(vm, x)
 #define CAST(T, x) py_cast<T>(vm, x)

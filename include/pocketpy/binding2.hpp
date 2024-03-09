@@ -195,21 +195,10 @@ h = py_cast<Str&>(vm, obj) .str();
 return h;
 }
 
-template <class T, class Z = typename std::enable_if<is_py_class<T>::value>::type>
-    inline PyObject* py_var(VM* vm, const T& value) { 
-return vm->heap.gcnew<T>(T::_type(vm), value);
-}  
-
-template <class T, class Z = typename std::enable_if<is_py_class<T>::value>::type>
-    inline PyObject* py_var(VM* vm, T&& value) { 
-return vm->heap.gcnew<T>(T::_type(vm), std::move(value));
-} 
-
 template<class T>
 inline bool is_type (VM* vm, PyObject* obj) {
 using Tp = std::decay_t<T>;
-if constexpr (is_py_class<Tp>::value) return is_type(obj, Tp::_type(vm));
-else if constexpr (std::is_integral<Tp>::value) return is_int(obj);
+if constexpr (std::is_integral<Tp>::value) return is_int(obj);
 else if constexpr (std::is_enum<Tp>::value) return is_int(obj);
 else if constexpr (std::is_floating_point<Tp>::value) return is_float(obj);
 #define TP(CTYPE,PTYPE) else if constexpr (std::is_same<Tp, CTYPE>::value) return is_type(obj, vm->PTYPE);
@@ -222,7 +211,7 @@ TP(Tuple, tp_tuple)
 TP(Bytes, tp_bytes)
 TP(Slice, tp_slice)
 #undef TP
-else return false;
+else return  is_type(obj, Tp::_type(vm));
 }
 
 template<class T>
