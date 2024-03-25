@@ -21,10 +21,12 @@
 #include <typeinfo>
 #include <initializer_list>
 
-#define PK_VERSION				"1.4.2"
+#define PK_VERSION				"1.4.3"
 
 #include "config.h"
 #include "export.h"
+
+#include "_generated.h"
 
 #ifdef min
 #undef min
@@ -69,13 +71,21 @@ namespace std = ::std;
 template <size_t T>
 struct NumberTraits;
 
+inline constexpr bool is_negative_shift_well_defined(){
+#ifdef __EMSCRIPTEN__
+	return false;
+#endif
+	// rshift does not affect the sign bit
+	return -1 >> 1 == -1;
+}
+
 template <>
 struct NumberTraits<4> {
 	using int_t = int32_t;
 	using float_t = float;
 
 	static constexpr int_t kMaxSmallInt = (1 << 28) - 1;
-	static constexpr int_t kMinSmallInt = - (1 << 28);
+	static constexpr int_t kMinSmallInt = is_negative_shift_well_defined() ? -(1 << 28) : 0;
 	static constexpr float_t kEpsilon = (float_t)1e-4;
 };
 
@@ -85,7 +95,7 @@ struct NumberTraits<8> {
 	using float_t = double;
 
 	static constexpr int_t kMaxSmallInt = (1ll << 60) - 1;
-	static constexpr int_t kMinSmallInt = - (1ll << 60);
+	static constexpr int_t kMinSmallInt = is_negative_shift_well_defined() ? -(1ll << 60) : 0;
 	static constexpr float_t kEpsilon = (float_t)1e-8;
 };
 
@@ -180,7 +190,8 @@ struct Type {
 #define PK_ASSERT(x) if(!(x)) PK_FATAL_ERROR();
 
 struct PyObject;
-#define PK_BITS(p) (reinterpret_cast<Number::int_t>(p))
+#define PK_BITS(p) (reinterpret_cast<i64>(p))
+#define PK_SMALL_INT(val) (reinterpret_cast<PyObject*>(val << 2 | 0b10))
 
 inline PyObject* tag_float(f64 val){
 	BitsCvt decomposed(val);

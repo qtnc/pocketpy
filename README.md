@@ -40,16 +40,31 @@ These platforms are officially tested.
 
 ## Quick Start
 
+You have two options to integrate pkpy into your project.
+
+#### Use the single header file
+
 Download the `pocketpy.h` on our [GitHub Release](https://github.com/pocketpy/pocketpy/releases) page.
-And `#include` it in your project.
+And `#include` it in your project. It is recommended to use the latest dev version.
 
-You can also use cmake to build it from source. See [CMakeLists.txt](https://github.com/pocketpy/pocketpy/blob/main/CMakeLists.txt) for details.
-Some variables can be set to control the build process:
-+ `PK_BUILD_STATIC_LIB` - Build the static library (default, recommended)
-+ `PK_BUILD_SHARED_LIB` - Build the shared  (for C-APIs only)
-+ `PK_ENABLE_OS` - Enable OS related features (default mode is sandboxed)
+#### Use CMake
 
-It is safe to use `main` branch in production.
+Clone the whole repository as a submodule into your project,
+In your CMakelists.txt, add the following lines:
+
+```cmake
+add_subdirectory(pocketpy)
+target_link_libraries(<your_target> pocketpy)
+
+if(EMSCRIPTEN)
+    # exceptions must be enabled for emscripten
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fexceptions")
+endif()
+```
+
+See [CMakeLists.txt](https://github.com/pocketpy/pocketpy/blob/main/CMakeLists.txt) for details.
+
+It is safe to use `main` branch in production if CI badge is green.
 
 ### Compile Flags
 
@@ -196,10 +211,6 @@ Your sponsorship will help us develop pkpy continuously.
 + [byterun](https://www.aosabook.org/en/500L/a-python-interpreter-written-in-python.html)
 
   An excellent learning material. It illustrates how Python's virtual machine works.
-
-+ [box2d](https://box2d.org/)
-
-  The world's best 2D physics engine, written by Erin Catto. `box2d` now becomes a built-in module in pkpy `v1.1.3` and later.
 
 
 ## Star History

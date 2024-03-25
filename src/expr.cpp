@@ -2,10 +2,6 @@
 
 namespace pkpy{
 
-    inline bool is_imm_int(i64 v){
-        return v >= INT16_MIN && v <= INT16_MAX;
-    }
-
     inline bool is_identifier(std::string_view s){
         if(s.empty()) return false;
         if(!isalpha(s[0]) && s[0] != '_') return false;
@@ -62,6 +58,16 @@ namespace pkpy{
             else co->lines[i].lineno = 1;
         }
         return i;
+    }
+
+    int CodeEmitContext::emit_int(i64 value, int line){
+        bool allow_neg_int = is_negative_shift_well_defined() || value >= 0;
+        if(allow_neg_int && value >= -5 && value <= 16){
+            uint8_t op = OP_LOAD_INT_NEG_5 + (uint8_t)value + 5;
+            return emit_((Opcode)op, BC_NOARG, line);
+        }else{
+            return emit_(OP_LOAD_CONST, add_const(VAR(value)), line);
+        }
     }
 
     void CodeEmitContext::patch_jump(int index) {
@@ -246,11 +252,7 @@ namespace pkpy{
         VM* vm = ctx->vm;
         if(std::holds_alternative<i64>(value)){
             i64 _val = std::get<i64>(value);
-            if(is_imm_int(_val)){
-                ctx->emit_(OP_LOAD_INTEGER, (uint16_t)_val, line);
-                return;
-            }
-            ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(_val)), line);
+            ctx->emit_int(_val, line);
             return;
         }
         if(std::holds_alternative<f64>(value)){
@@ -272,11 +274,7 @@ namespace pkpy{
             LiteralExpr* lit = static_cast<LiteralExpr*>(child.get());
             if(std::holds_alternative<i64>(lit->value)){
                 i64 _val = -std::get<i64>(lit->value);
-                if(is_imm_int(_val)){
-                    ctx->emit_(OP_LOAD_INTEGER, (uint16_t)_val, line);
-                }else{
-                    ctx->emit_(OP_LOAD_CONST, ctx->add_const(VAR(_val)), line);
-                }
+                ctx->emit_int(_val, line);
                 return;
             }
             if(std::holds_alternative<f64>(lit->value)){
@@ -607,8 +605,8 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
             // vectorcall protocol
             for(auto& item: args) item->emit_(ctx);
             for(auto& item: kwargs){
-                uint16_t index = StrName(item.first.sv()).index;
-                ctx->emit_(OP_LOAD_INTEGER, index, line);
+                i64 _val = StrName(item.first.sv()).index;
+                ctx->emit_int(_val, line);
                 item.second->emit_(ctx);
             }
             int KWARGC = kwargs.size();

@@ -120,16 +120,15 @@ namespace pkpy{
         PK_UNREACHABLE();
     }
 
-    FrameId VM::top_frame(){
+    Frame* VM::top_frame(){
 #if PK_DEBUG_EXTRA_CHECK
         if(callstack.empty()) PK_FATAL_ERROR();
 #endif
-        return FrameId(&callstack.container(), callstack.size()-1);
+        return &callstack.top();
     }
 
     void VM::_pop_frame(){
-        Frame* frame = &callstack.top();
-        s_data.reset(frame->_sp_base);
+        s_data.reset(callstack.top()._sp_base);
         callstack.pop();
     }
 
@@ -653,7 +652,7 @@ void VM::_log_s_data(const char* title) {
         if(f._sp_base == nullptr) PK_FATAL_ERROR();
         sp_bases[f._sp_base] += 1;
     }
-    FrameId frame = top_frame();
+    Frame* frame = top_frame();
     int line = frame->co->lines[frame->_ip];
     ss << frame->co->name << ":" << line << " [";
     for(PyObject** p=s_data.begin(); p!=s_data.end(); p++){
@@ -839,7 +838,7 @@ void VM::_prepare_py_call(PyObject** buffer, ArgsView args, ArgsView kwargs, con
     }
 
     for(int j=0; j<kwargs.size(); j+=2){
-        StrName key(CAST(int, kwargs[j]));
+        StrName key(_CAST(uint16_t, kwargs[j]));
         int index = decl->kw_to_index.try_get_likely_found(key);
         // if key is an explicit key, set as local variable
         if(index >= 0){
@@ -862,13 +861,16 @@ PyObject* VM::vectorcall(int ARGC, int KWARGC, bool op_call){
     // [callable, <self>, args..., kwargs...]
     //      ^p0                    ^p1      ^_sp
     PyObject* callable = p1[-(ARGC + 2)];
-    bool method_call = p1[-(ARGC + 1)] != PY_NULL;
+    Type callable_t = _tp(callable);
+
+    bool method_call = p0[1] != PY_NULL;
 
     // handle boundmethod, do a patch
-    if(is_non_tagged_type(callable, tp_bound_method)){
+    if(callable_t == tp_bound_method){
         if(method_call) PK_FATAL_ERROR();
         BoundMethod& bm = PK_OBJ_GET(BoundMethod, callable);
         callable = bm.func;      // get unbound method
+        callable_t = _tp(callable);
         p1[-(ARGC + 2)] = bm.func;
         p1[-(ARGC + 1)] = bm.self;
         method_call = true;
@@ -881,7 +883,50 @@ PyObject* VM::vectorcall(int ARGC, int KWARGC, bool op_call){
     PyObject** _base = args.begin();
     PyObject* buffer[PK_MAX_CO_VARNAMES];
 
-    if(is_non_tagged_type(callable, tp_native_func)){
+    if(callable_t == tp_function){
+        /*****************_py_call*****************/
+        if(s_data.is_overflow()) StackOverflowError();
+
+        const Function& fn = PK_OBJ_GET(Function, callable);
+        const CodeObject* co = fn.decl->code.get();
+        int co_nlocals = co->varnames.size();
+        if(fn.decl->is_simple){
+            if(args.size() != fn.decl->args.size()){
+                TypeError(_S(
+                    co->name, "() takes ", fn.decl->args.size(), " positional arguments but ", args.size(), " were given"
+                ));
+            }
+            if(!kwargs.empty()) TypeError(_S(co->name, "() takes no keyword arguments"));
+            // [callable, <self>, args..., local_vars...]
+            //      ^p0                    ^p1      ^_sp
+            s_data.reset(_base + co_nlocals);
+            // initialize local variables to PY_NULL
+            for(PyObject** p=p1; p!=s_data._sp; p++) *p = PY_NULL;
+            goto __FAST_CALL;
+        }
+
+        _prepare_py_call(buffer, args, kwargs, fn.decl);
+        
+        if(co->is_generator){
+            s_data.reset(p0);
+            return _py_generator(
+                Frame(nullptr, co, fn._module, callable, nullptr),
+                ArgsView(buffer, buffer + co_nlocals)
+            );
+        }
+
+        // copy buffer back to stack
+        s_data.reset(_base + co_nlocals);
+        for(int j=0; j<co_nlocals; j++) _base[j] = buffer[j];
+
+__FAST_CALL:
+        callstack.emplace(p0, co, fn._module, callable, args.begin());
+        if(op_call) return PY_OP_CALL;
+        return _run_top_frame();
+        /*****************_py_call*****************/
+    }
+
+    if(callable_t == tp_native_func){
         const auto& f = PK_OBJ_GET(NativeFunc, callable);
         PyObject* ret;
         if(f.decl != nullptr){
@@ -900,55 +945,7 @@ PyObject* VM::vectorcall(int ARGC, int KWARGC, bool op_call){
         return ret;
     }
 
-    if(is_non_tagged_type(callable, tp_function)){
-        /*****************_py_call*****************/
-        // callable must be a `function` object
-        if(s_data.is_overflow()) StackOverflowError();
-
-        const Function& fn = PK_OBJ_GET(Function, callable);
-        const FuncDecl_& decl = fn.decl;
-        const CodeObject* co = decl->code.get();
-        int co_nlocals = co->varnames.size();
-        if(decl->is_simple){
-            if(args.size() != decl->args.size()){
-                TypeError(_S(
-                    co->name, "() takes ", decl->args.size(), " positional arguments but ", args.size(), " were given"
-                ));
-            }
-            if(!kwargs.empty()){
-                TypeError(_S(co->name, "() takes no keyword arguments"));
-            }
-            s_data.reset(_base + co_nlocals);
-            int i = 0;
-            // prepare args
-            for(int index: decl->args) _base[index] = args[i++];
-            // set extra varnames to PY_NULL
-            for(int j=i; j<co_nlocals; j++) _base[j] = PY_NULL;
-            goto __FAST_CALL;
-        }
-
-        _prepare_py_call(buffer, args, kwargs, decl);
-        
-        if(co->is_generator){
-            s_data.reset(p0);
-            return _py_generator(
-                Frame(&s_data, nullptr, co, fn._module, callable),
-                ArgsView(buffer, buffer + co_nlocals)
-            );
-        }
-
-        // copy buffer back to stack
-        s_data.reset(_base + co_nlocals);
-        for(int j=0; j<co_nlocals; j++) _base[j] = buffer[j];
-
-__FAST_CALL:
-        callstack.emplace(&s_data, p0, co, fn._module, callable, FastLocals(co, args.begin()));
-        if(op_call) return PY_OP_CALL;
-        return _run_top_frame();
-        /*****************_py_call*****************/
-    }
-
-    if(is_non_tagged_type(callable, tp_type)){
+    if(callable_t == tp_type){
         // [type, NULL, args..., kwargs...]
         PyObject* new_f = find_name_in_mro(PK_OBJ_GET(Type, callable), __new__);
         PyObject* obj;
@@ -971,7 +968,8 @@ __FAST_CALL:
         // __init__
         PyObject* self;
         callable = get_unbound_method(obj, __init__, &self, false);
-        if (self != PY_NULL) {
+        if (callable != nullptr) {
+            callable_t = _tp(callable);
             // replace `NULL` with `self`
             p1[-(ARGC + 2)] = callable;
             p1[-(ARGC + 1)] = self;
@@ -995,7 +993,7 @@ __FAST_CALL:
         // [call_f, self, args..., kwargs...]
         return vectorcall(ARGC, KWARGC, false);
     }
-    TypeError(_type_name(vm, _tp(callable)).escape() + " object is not callable");
+    TypeError(_type_name(vm, callable_t).escape() + " object is not callable");
     PK_UNREACHABLE()
 }
 
@@ -1243,13 +1241,13 @@ void VM::_error(PyObject* e_obj){
 }
 
 void VM::_raise(bool re_raise){
-    Frame* frame = top_frame().get();
+    Frame* frame = top_frame();
     Exception& e = PK_OBJ_GET(Exception, s_data.top());
     if(!re_raise){
         e._ip_on_error = frame->_ip;
         e._code_on_error = (void*)frame->co;
     }
-    bool ok = frame->jump_to_exception_handler();
+    bool ok = frame->jump_to_exception_handler(&s_data);
 
     int actual_ip = frame->_ip;
     if(e._ip_on_error >= 0 && e._code_on_error == (void*)frame->co) actual_ip = e._ip_on_error;
@@ -1264,7 +1262,7 @@ void VM::_raise(bool re_raise){
 
 void ManagedHeap::mark() {
     for(PyObject* obj: _no_gc) PK_OBJ_MARK(obj);
-    for(auto& frame : vm->callstack.container()) frame._gc_mark();
+    vm->callstack.apply([](Frame& frame){ frame._gc_mark(); });
     for(PyObject* obj: vm->s_data) PK_OBJ_MARK(obj);
     for(auto [_, co]: vm->_cached_codes) co->_gc_mark();
     if(vm->_last_exception) PK_OBJ_MARK(vm->_last_exception);

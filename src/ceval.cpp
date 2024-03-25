@@ -2,6 +2,19 @@
 
 namespace pkpy{
 
+#define PREDICT_INT_OP(op)  \
+    if(is_small_int(_0) && is_small_int(_1)){   \
+        TOP() = VAR((PK_BITS(_0)>>2) op (PK_BITS(_1)>>2)); \
+        DISPATCH() \
+    }
+
+#define PREDICT_INT_DIV_OP(op)  \
+    if(is_small_int(_0) && is_small_int(_1)){   \
+        if(_1 == PK_SMALL_INT(0)) ZeroDivisionError();   \
+        TOP() = VAR((PK_BITS(_0)>>2) op (PK_BITS(_1)>>2)); \
+        DISPATCH() \
+    }
+
 #define BINARY_F_COMPARE(func, op, rfunc)                           \
         PyObject* ret;                                              \
         const PyTypeInfo* _ti = _inst_type_info(_0);                \
@@ -44,19 +57,12 @@ bool VM::py_ge(PyObject* _0, PyObject* _1){
 
 #undef BINARY_F_COMPARE
 
-// static i64 _py_sint(PyObject* obj) noexcept {
-//     return (i64)(PK_BITS(obj) >> 2);
-// }
-
 PyObject* VM::_run_top_frame(){
-    FrameId frame = top_frame();
-    const int base_id = frame.index;
+    Frame* frame = top_frame();
+    const Frame* base_frame = frame;
     bool need_raise = false;
 
     while(true){
-#if PK_DEBUG_EXTRA_CHECK
-        if(frame.index < base_id) PK_FATAL_ERROR();
-#endif
         try{
             if(need_raise){ need_raise = false; _raise(); }
 /**********************************************************************/
@@ -67,32 +73,20 @@ PyObject* VM::_run_top_frame(){
 {
 
 #define CEVAL_STEP_CALLBACK() \
-    if(_ceval_on_step) _ceval_on_step(this, frame.get(), byte); \
-    if(_profiler) _profiler->_step(frame);
+    if(_ceval_on_step) _ceval_on_step(this, frame, byte); \
+    if(_profiler) _profiler->_step(callstack._tail);
 
 #define DISPATCH_OP_CALL() { frame = top_frame(); goto __NEXT_FRAME; }
 __NEXT_FRAME:
-    Bytecode byte = frame->next_bytecode();
-    CEVAL_STEP_CALLBACK();
-
     // cache
     const CodeObject* co = frame->co;
-    const auto& co_consts = co->consts;
+    const Bytecode* co_codes = co->codes.data();
 
-#if PK_ENABLE_COMPUTED_GOTO
-static void* OP_LABELS[] = {
-    #define OPCODE(name) &&CASE_OP_##name,
-    #include "pocketpy/opcodes.h"
-    #undef OPCODE
-};
+    Bytecode byte = co_codes[frame->next_bytecode()];
+    CEVAL_STEP_CALLBACK();
 
-#define DISPATCH() { byte = frame->next_bytecode(); CEVAL_STEP_CALLBACK(); goto *OP_LABELS[byte.op];}
-#define TARGET(op) CASE_OP_##op:
-goto *OP_LABELS[byte.op];
-
-#else
 #define TARGET(op) case OP_##op:
-#define DISPATCH() { byte = frame->next_bytecode(); CEVAL_STEP_CALLBACK(); goto __NEXT_STEP;}
+#define DISPATCH() { byte = co_codes[frame->next_bytecode()]; CEVAL_STEP_CALLBACK(); goto __NEXT_STEP;}
 
 __NEXT_STEP:;
 #if PK_DEBUG_CEVAL_STEP
@@ -100,7 +94,6 @@ __NEXT_STEP:;
 #endif
     switch (byte.op)
     {
-#endif
     TARGET(NO_OP) DISPATCH();
     /*****************************************/
     TARGET(POP_TOP) POP(); DISPATCH();
@@ -120,15 +113,38 @@ __NEXT_STEP:;
     /*****************************************/
     TARGET(LOAD_CONST)
         if(heap._should_auto_collect()) heap._auto_collect();
-        PUSH(co_consts[byte.arg]);
+        PUSH(co->consts[byte.arg]);
         DISPATCH();
     TARGET(LOAD_NONE)       PUSH(None); DISPATCH();
     TARGET(LOAD_TRUE)       PUSH(True); DISPATCH();
     TARGET(LOAD_FALSE)      PUSH(False); DISPATCH();
-    TARGET(LOAD_INTEGER)    PUSH(VAR((int16_t)byte.arg)); DISPATCH();
+    /*****************************************/
+    TARGET(LOAD_INT_NEG_5) PUSH((PyObject*)-18); DISPATCH();
+    TARGET(LOAD_INT_NEG_4) PUSH((PyObject*)-14); DISPATCH();
+    TARGET(LOAD_INT_NEG_3) PUSH((PyObject*)-10); DISPATCH();
+    TARGET(LOAD_INT_NEG_2) PUSH((PyObject*)-6); DISPATCH();
+    TARGET(LOAD_INT_NEG_1) PUSH((PyObject*)-2); DISPATCH();
+    TARGET(LOAD_INT_0)      PUSH(PK_SMALL_INT(0)); DISPATCH();
+    TARGET(LOAD_INT_1)      PUSH(PK_SMALL_INT(1)); DISPATCH();
+    TARGET(LOAD_INT_2)      PUSH(PK_SMALL_INT(2)); DISPATCH();
+    TARGET(LOAD_INT_3)      PUSH(PK_SMALL_INT(3)); DISPATCH();
+    TARGET(LOAD_INT_4)      PUSH(PK_SMALL_INT(4)); DISPATCH();
+    TARGET(LOAD_INT_5)      PUSH(PK_SMALL_INT(5)); DISPATCH();
+    TARGET(LOAD_INT_6)      PUSH(PK_SMALL_INT(6)); DISPATCH();
+    TARGET(LOAD_INT_7)      PUSH(PK_SMALL_INT(7)); DISPATCH();
+    TARGET(LOAD_INT_8)      PUSH(PK_SMALL_INT(8)); DISPATCH();
+    TARGET(LOAD_INT_9)      PUSH(PK_SMALL_INT(9)); DISPATCH();
+    TARGET(LOAD_INT_10)     PUSH(PK_SMALL_INT(10)); DISPATCH();
+    TARGET(LOAD_INT_11)     PUSH(PK_SMALL_INT(11)); DISPATCH();
+    TARGET(LOAD_INT_12)     PUSH(PK_SMALL_INT(12)); DISPATCH();
+    TARGET(LOAD_INT_13)     PUSH(PK_SMALL_INT(13)); DISPATCH();
+    TARGET(LOAD_INT_14)     PUSH(PK_SMALL_INT(14)); DISPATCH();
+    TARGET(LOAD_INT_15)     PUSH(PK_SMALL_INT(15)); DISPATCH();
+    TARGET(LOAD_INT_16)     PUSH(PK_SMALL_INT(16)); DISPATCH();
+    /*****************************************/
     TARGET(LOAD_ELLIPSIS)   PUSH(Ellipsis); DISPATCH();
     TARGET(LOAD_FUNCTION) {
-        FuncDecl_ decl = co->func_decls[byte.arg];
+        const FuncDecl_& decl = co->func_decls[byte.arg];
         PyObject* obj;
         if(decl->nested){
             NameDict_ captured = frame->_locals.to_namedict();
@@ -372,8 +388,6 @@ __NEXT_STEP:;
     } DISPATCH();
     /*****************************************/
 #define BINARY_OP_SPECIAL(func)                         \
-        _1 = POPX();                                    \
-        _0 = TOP();                                     \
         _ti = _inst_type_info(_0);                      \
         if(_ti->m##func){                               \
             TOP() = _ti->m##func(this, _0, _1);         \
@@ -394,48 +408,69 @@ __NEXT_STEP:;
         }
 
     TARGET(BINARY_TRUEDIV){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__truediv__);
         if(TOP() == NotImplemented) BinaryOptError("/", _0, _1);
     } DISPATCH();
     TARGET(BINARY_POW){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__pow__);
         if(TOP() == NotImplemented) BinaryOptError("**", _0, _1);
     } DISPATCH();
     TARGET(BINARY_ADD){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_OP(+)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__add__);
         BINARY_OP_RSPECIAL("+", __radd__);
     } DISPATCH()
     TARGET(BINARY_SUB){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_OP(-)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__sub__);
         BINARY_OP_RSPECIAL("-", __rsub__);
     } DISPATCH()
     TARGET(BINARY_MUL){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_OP(*)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__mul__);
         BINARY_OP_RSPECIAL("*", __rmul__);
     } DISPATCH()
     TARGET(BINARY_FLOORDIV){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_DIV_OP(/)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__floordiv__);
         if(TOP() == NotImplemented) BinaryOptError("//", _0, _1);
     } DISPATCH()
     TARGET(BINARY_MOD){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_DIV_OP(%)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__mod__);
         if(TOP() == NotImplemented) BinaryOptError("%", _0, _1);
     } DISPATCH()
     TARGET(COMPARE_LT){
         PyObject* _1 = POPX();
         PyObject* _0 = TOP();
+        PREDICT_INT_OP(<)
         TOP() = VAR(py_lt(_0, _1));
     } DISPATCH()
     TARGET(COMPARE_LE){
         PyObject* _1 = POPX();
         PyObject* _0 = TOP();
+        PREDICT_INT_OP(<=)
         TOP() = VAR(py_le(_0, _1));
     } DISPATCH()
     TARGET(COMPARE_EQ){
@@ -446,50 +481,71 @@ __NEXT_STEP:;
     TARGET(COMPARE_NE){
         PyObject* _1 = POPX();
         PyObject* _0 = TOP();
-        TOP() = VAR(!py_eq(_0, _1));
+        TOP() = VAR(py_ne(_0, _1));
     } DISPATCH()
     TARGET(COMPARE_GT){
         PyObject* _1 = POPX();
         PyObject* _0 = TOP();
+        PREDICT_INT_OP(>)
         TOP() = VAR(py_gt(_0, _1));
     } DISPATCH()
     TARGET(COMPARE_GE){
         PyObject* _1 = POPX();
         PyObject* _0 = TOP();
+        PREDICT_INT_OP(>=)
         TOP() = VAR(py_ge(_0, _1));
     } DISPATCH()
     TARGET(BITWISE_LSHIFT){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_OP(<<)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__lshift__);
         if(TOP() == NotImplemented) BinaryOptError("<<", _0, _1);
     } DISPATCH()
     TARGET(BITWISE_RSHIFT){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_OP(>>)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__rshift__);
         if(TOP() == NotImplemented) BinaryOptError(">>", _0, _1);
     } DISPATCH()
     TARGET(BITWISE_AND){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_OP(&)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__and__);
         if(TOP() == NotImplemented) BinaryOptError("&", _0, _1);
     } DISPATCH()
     TARGET(BITWISE_OR){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_OP(|)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__or__);
         if(TOP() == NotImplemented) BinaryOptError("|", _0, _1);
     } DISPATCH()
     TARGET(BITWISE_XOR){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        PREDICT_INT_OP(^)
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__xor__);
         if(TOP() == NotImplemented) BinaryOptError("^", _0, _1);
     } DISPATCH()
     TARGET(BINARY_MATMUL){
-        PyObject* _0; PyObject* _1; const PyTypeInfo* _ti;
+        PyObject* _1 = POPX();
+        PyObject* _0 = TOP();
+        const PyTypeInfo* _ti;
         BINARY_OP_SPECIAL(__matmul__);
         if(TOP() == NotImplemented) BinaryOptError("@", _0, _1);
     } DISPATCH();
 
 #undef BINARY_OP_SPECIAL
+#undef BINARY_OP_RSPECIAL
+#undef PREDICT_INT_OP
 
     TARGET(IS_OP){
         PyObject* _1 = POPX();    // rhs
@@ -513,7 +569,7 @@ __NEXT_STEP:;
         frame->jump_abs(byte.arg);
         DISPATCH();
     TARGET(JUMP_ABSOLUTE_TOP)
-        frame->jump_abs(_CAST(uint16_t, POPX()));
+        frame->jump_abs(_CAST(int, POPX()));
         DISPATCH();
     TARGET(POP_JUMP_IF_FALSE){
         if(!py_bool(TOP())) frame->jump_abs(byte.arg);
@@ -542,17 +598,17 @@ __NEXT_STEP:;
         frame->jump_abs(byte.arg);
         DISPATCH();
     TARGET(LOOP_BREAK)
-        frame->jump_abs_break(byte.arg);
+        frame->jump_abs_break(&s_data, byte.arg);
         DISPATCH();
     TARGET(GOTO) {
         StrName _name(byte.arg);
         int index = co->labels.try_get_likely_found(_name);
         if(index < 0) RuntimeError(_S("label ", _name.escape(), " not found"));
-        frame->jump_abs_break(index);
+        frame->jump_abs_break(&s_data, index);
     } DISPATCH();
     /*****************************************/
     TARGET(FSTRING_EVAL){
-        PyObject* _0 = co_consts[byte.arg];
+        PyObject* _0 = co->consts[byte.arg];
         std::string_view string = CAST(Str&, _0).sv();
         auto it = _cached_codes.find(string);
         CodeObject_ code;
@@ -611,7 +667,7 @@ __NEXT_STEP:;
     TARGET(RETURN_VALUE){
         PyObject* _0 = byte.arg == BC_NOARG ? POPX() : None;
         _pop_frame();
-        if(frame.index == base_id){       // [ frameBase<- ]
+        if(frame == base_frame){       // [ frameBase<- ]
             return _0;
         }else{
             frame = top_frame();
@@ -664,12 +720,12 @@ __NEXT_STEP:;
         if(_0 != StopIteration){
             PUSH(_0);
         }else{
-            frame->jump_abs_break(byte.arg);
+            frame->jump_abs_break(&s_data, byte.arg);
         }
     } DISPATCH();
     /*****************************************/
     TARGET(IMPORT_PATH){
-        PyObject* _0 = co_consts[byte.arg];
+        PyObject* _0 = co->consts[byte.arg];
         PUSH(py_import(CAST(Str&, _0)));
     } DISPATCH();
     TARGET(POP_IMPORT_STAR) {
@@ -795,7 +851,7 @@ __NEXT_STEP:;
     /*****************************************/
     TARGET(FORMAT_STRING) {
         PyObject* _0 = POPX();
-        const Str& spec = CAST(Str&, co_consts[byte.arg]);
+        const Str& spec = CAST(Str&, co->consts[byte.arg]);
         PUSH(_format_string(spec, _0));
     } DISPATCH();
     /*****************************************/
@@ -821,12 +877,11 @@ __NEXT_STEP:;
         if(p == nullptr) vm->NameError(_name);
         *p = VAR(CAST(i64, *p) - 1);
     } DISPATCH();
-
-#if !PK_ENABLE_COMPUTED_GOTO
-        static_assert(OP_DEC_GLOBAL == 112);
-        case 113: case 114: case 115: case 116: case 117: case 118: case 119: case 120: case 121: case 122: case 123: case 124: case 125: case 126: case 127: case 128: case 129: case 130: case 131: case 132: case 133: case 134: case 135: case 136: case 137: case 138: case 139: case 140: case 141: case 142: case 143: case 144: case 145: case 146: case 147: case 148: case 149: case 150: case 151: case 152: case 153: case 154: case 155: case 156: case 157: case 158: case 159: case 160: case 161: case 162: case 163: case 164: case 165: case 166: case 167: case 168: case 169: case 170: case 171: case 172: case 173: case 174: case 175: case 176: case 177: case 178: case 179: case 180: case 181: case 182: case 183: case 184: case 185: case 186: case 187: case 188: case 189: case 190: case 191: case 192: case 193: case 194: case 195: case 196: case 197: case 198: case 199: case 200: case 201: case 202: case 203: case 204: case 205: case 206: case 207: case 208: case 209: case 210: case 211: case 212: case 213: case 214: case 215: case 216: case 217: case 218: case 219: case 220: case 221: case 222: case 223: case 224: case 225: case 226: case 227: case 228: case 229: case 230: case 231: case 232: case 233: case 234: case 235: case 236: case 237: case 238: case 239: case 240: case 241: case 242: case 243: case 244: case 245: case 246: case 247: case 248: case 249: case 250: case 251: case 252: case 253: case 254: case 255: PK_UNREACHABLE() break;
+    /*****************************************/
+        static_assert(OP_DEC_GLOBAL == 134);
+        case 135: case 136: case 137: case 138: case 139: case 140: case 141: case 142: case 143: case 144: case 145: case 146: case 147: case 148: case 149: case 150: case 151: case 152: case 153: case 154: case 155: case 156: case 157: case 158: case 159: case 160: case 161: case 162: case 163: case 164: case 165: case 166: case 167: case 168: case 169: case 170: case 171: case 172: case 173: case 174: case 175: case 176: case 177: case 178: case 179: case 180: case 181: case 182: case 183: case 184: case 185: case 186: case 187: case 188: case 189: case 190: case 191: case 192: case 193: case 194: case 195: case 196: case 197: case 198: case 199: case 200: case 201: case 202: case 203: case 204: case 205: case 206: case 207: case 208: case 209: case 210: case 211: case 212: case 213: case 214: case 215: case 216: case 217: case 218: case 219: case 220: case 221: case 222: case 223: case 224: case 225: case 226: case 227: case 228: case 229: case 230: case 231: case 232: case 233: case 234: case 235: case 236: case 237: case 238: case 239: case 240: case 241: case 242: case 243: case 244: case 245: case 246: case 247: case 248: case 249: case 250: case 251: case 252: case 253: case 254: case 255: PK_UNREACHABLE() break;
     }
-#endif
+
 }
 
 #undef DISPATCH
@@ -840,16 +895,12 @@ __NEXT_STEP:;
         }catch(UnhandledException){
             PyObject* e_obj = POPX();
             Exception& _e = PK_OBJ_GET(Exception, e_obj);
+            bool is_base_frame_to_be_popped = frame == base_frame;
             _pop_frame();
-            if(callstack.empty()){
-#if PK_DEBUG_FULL_EXCEPTION
-                std::cerr << _e.summary() << std::endl;
-#endif
-                throw _e;
-            }
+            if(callstack.empty()) throw _e;   // propagate to the top level
             frame = top_frame();
             PUSH(e_obj);
-            if(frame.index < base_id) throw ToBeRaisedException();
+            if(is_base_frame_to_be_popped) throw ToBeRaisedException();
             need_raise = true;
         }catch(ToBeRaisedException){
             need_raise = true;

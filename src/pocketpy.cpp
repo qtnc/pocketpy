@@ -59,7 +59,7 @@ void init_builtins(VM* _vm) {
             class_arg = args[0];
             self_arg = args[1];
         }else if(args.size() == 0){
-            FrameId frame = vm->top_frame();
+            Frame* frame = vm->top_frame();
             if(frame->_callable != nullptr){
                 class_arg = PK_OBJ_GET(Function, frame->_callable)._class;
                 if(frame->_locals.size() > 0) self_arg = frame->_locals[0];
@@ -166,7 +166,7 @@ void init_builtins(VM* _vm) {
         CodeObject_ code = vm->compile(CAST(Str&, args[0]), "<eval>", EVAL_MODE, true);
         PyObject* globals = args[1];
         if(globals == vm->None){
-            FrameId frame = vm->top_frame();
+            Frame* frame = vm->top_frame();
             return vm->_exec(code.get(), frame->_module, frame->_callable, frame->_locals);
         }
         vm->check_non_tagged_type(globals, vm->tp_mappingproxy);
@@ -178,7 +178,7 @@ void init_builtins(VM* _vm) {
         CodeObject_ code = vm->compile(CAST(Str&, args[0]), "<exec>", EXEC_MODE, true);
         PyObject* globals = args[1];
         if(globals == vm->None){
-            FrameId frame = vm->top_frame();
+            Frame* frame = vm->top_frame();
             vm->_exec(code.get(), frame->_module, frame->_callable, frame->_locals);
             return vm->None;
         }
@@ -334,6 +334,7 @@ void init_builtins(VM* _vm) {
             case 3: r.start = CAST(i64, args[0]); r.stop = CAST(i64, args[1]); r.step = CAST(i64, args[2]); break;
             default: vm->TypeError("expected 1-3 arguments, got " + std::to_string(args.size()));
         }
+        if(r.step == 0) vm->ValueError("range() arg 3 must not be zero");
         return VAR(r);
     });
 
@@ -1539,14 +1540,21 @@ void VM::post_init(){
     add_module_base64(this);
     add_module_operator(this);
 
-    for(const char* name: {"functools", "itertools", "heapq", "bisect", "pickle", "_long", "colorsys", "typing", "datetime", "cmath"}){
-        _lazy_modules[name] = kPythonLibs[name];
-    }
+    _lazy_modules["functools"] = kPythonLibs_functools;
+    _lazy_modules["itertools"] = kPythonLibs_itertools;
+    _lazy_modules["heapq"] = kPythonLibs_heapq;
+    _lazy_modules["bisect"] = kPythonLibs_bisect;
+    _lazy_modules["pickle"] = kPythonLibs_pickle;
+    _lazy_modules["_long"] = kPythonLibs__long;
+    _lazy_modules["colorsys"] = kPythonLibs_colorsys;
+    _lazy_modules["typing"] = kPythonLibs_typing;
+    _lazy_modules["datetime"] = kPythonLibs_datetime;
+    _lazy_modules["cmath"] = kPythonLibs_cmath;
 
     try{
-        CodeObject_ code = compile(kPythonLibs["builtins"], "<builtins>", EXEC_MODE);
+        CodeObject_ code = compile(kPythonLibs_builtins, "<builtins>", EXEC_MODE);
         this->_exec(code, this->builtins);
-        code = compile(kPythonLibs["_set"], "<set>", EXEC_MODE);
+        code = compile(kPythonLibs__set, "<set>", EXEC_MODE);
         this->_exec(code, this->builtins);
     }catch(const Exception& e){
         std::cerr << e.summary() << std::endl;

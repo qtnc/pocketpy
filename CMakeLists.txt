@@ -67,7 +67,7 @@ if(PK_USE_CJSON)
     target_link_libraries(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:cjson>)
 endif()
 
-option(PK_INSTALL "Generate the install target" ON)
+option(PK_INSTALL "Generate the install target" OFF)
 if (PK_INSTALL)
     install(
         TARGETS ${PROJECT_NAME}
