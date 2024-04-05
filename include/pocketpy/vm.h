@@ -82,13 +82,10 @@ struct PyTypeInfo{
     void (*m__setattr__)(VM* vm, PyObject*, StrName, PyObject*) = nullptr;
     PyObject* (*m__getattr__)(VM* vm, PyObject*, StrName) = nullptr;
     bool (*m__delattr__)(VM* vm, PyObject*, StrName) = nullptr;
-
 };
 
 typedef void(*PrintFunc)(const char*, int);
-typedef unsigned char* (*ImportHandlerFunc)(VM*, const char*, int, int*);
-
-class IOHandler;
+typedef unsigned char* (*ImportHandlerFunc)(const char*, int, int*);
 
 class VM {
     PK_ALWAYS_PASS_BY_POINTER(VM)
@@ -127,7 +124,7 @@ public:
     std::map<std::string_view, CodeObject_> _cached_codes;
 
     // typeid -> Type
-    std::map<const std::type_info*, Type> _cxx_typeid_map;
+    std::map<const std::type_index, Type> _cxx_typeid_map;
 
     void (*_ceval_on_step)(VM*, Frame*, Bytecode bc) = nullptr;
 
@@ -136,7 +133,6 @@ public:
     PrintFunc _stdout;
     PrintFunc _stderr;
     ImportHandlerFunc _import_handler;
-    IOHandler* _io_handler;
 
     // for quick access
     static constexpr Type tp_object=0, tp_type=1;
@@ -441,7 +437,7 @@ public:
 
     template<typename T>
     Type _find_type_in_cxx_typeid_map(){
-        auto it = _cxx_typeid_map.find(&typeid(T));
+        auto it = _cxx_typeid_map.find(typeid(T));
         if(it == _cxx_typeid_map.end()){
     #if __GNUC__ || __clang__
             throw std::runtime_error(__PRETTY_FUNCTION__ + std::string(" failed: T not found"));

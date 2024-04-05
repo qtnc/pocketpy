@@ -36,10 +36,10 @@ struct Str{
     bool empty() const { return size == 0; }
     size_t hash() const{ return std::hash<std::string_view>()(sv()); }
 
-    Str& operator=(const Str& other);
-    Str operator+(const Str& other) const;
-    friend Str operator+(const char* p, const Str& str);
-    Str operator+(const char* p) const;
+    Str& operator=(const Str&);
+    Str operator+(const Str&) const;
+    Str operator+(const char*) const;
+    friend Str operator+(const char*, const Str&);
 
     bool operator==(const std::string_view other) const;
     bool operator!=(const std::string_view other) const;
@@ -113,11 +113,11 @@ struct StrName {
     }
 
     bool operator<(const StrName& other) const noexcept {
-        return this->index < other.index;
+        return sv() < other.sv();
     }
 
     bool operator>(const StrName& other) const noexcept {
-        return this->index > other.index;
+        return sv() > other.sv();
     }
 
     static bool is_valid(int index);
@@ -225,6 +225,7 @@ const StrName __all__ = StrName::get("__all__");
 const StrName __package__ = StrName::get("__package__");
 const StrName __path__ = StrName::get("__path__");
 const StrName __class__ = StrName::get("__class__");
+const StrName __missing__ = StrName::get("__missing__");
 
 const StrName pk_id_add = StrName::get("add");
 const StrName pk_id_set = StrName::get("set");

@@ -157,8 +157,18 @@ assert b[5:2:-2] == [',', 'l']
 a = '123'
 assert a.rjust(5) == '  123'
 assert a.rjust(5, '0') == '00123'
+try:
+    a.rjust(5, '00')
+    exit(1)
+except TypeError:
+    pass
 assert a.ljust(5) == '123  '
 assert a.ljust(5, '0') == '12300'
+try:
+    a.ljust(5, '00')
+    exit(1)
+except TypeError:
+    pass
 
 assert '\x30\x31\x32' == '012'
 
@@ -240,6 +250,17 @@ try:
 except ValueError:
     pass
 
+try:
+    a.index('1', -1)
+    exit(1)
+except ValueError:
+    pass
+
 assert a.find('1') == 0
 assert a.find('1', 1) == -1
 
+try:
+    a.find('1', -1)
+    exit(1)
+except ValueError:
+    pass
