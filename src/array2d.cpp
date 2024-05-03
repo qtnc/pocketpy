@@ -4,7 +4,6 @@ namespace pkpy{
 
 struct Array2d{
     PK_ALWAYS_PASS_BY_POINTER(Array2d)
-    PY_CLASS(Array2d, array2d, array2d)
 
     PyObject** data;
     int n_cols;
@@ -17,8 +16,6 @@ struct Array2d{
         n_rows = 0;
         numel = 0;
     }
-
-    Array2d* _() { return this; }
 
     void init(int n_cols, int n_rows){
         this->n_cols = n_cols;
@@ -61,11 +58,11 @@ struct Array2d{
             return vm->None;
         });
 
-        PY_READONLY_FIELD(Array2d, "n_cols", _, n_cols);
-        PY_READONLY_FIELD(Array2d, "n_rows", _, n_rows);
-        PY_READONLY_FIELD(Array2d, "width", _, n_cols);
-        PY_READONLY_FIELD(Array2d, "height", _, n_rows);
-        PY_READONLY_FIELD(Array2d, "numel", _, numel);
+        PY_READONLY_FIELD(Array2d, "n_cols", n_cols);
+        PY_READONLY_FIELD(Array2d, "n_rows", n_rows);
+        PY_READONLY_FIELD(Array2d, "width", n_cols);
+        PY_READONLY_FIELD(Array2d, "height", n_rows);
+        PY_READONLY_FIELD(Array2d, "numel", numel);
 
         vm->bind(type, "is_valid(self, col: int, row: int)", [](VM* vm, ArgsView args){
             Array2d& self = PK_OBJ_GET(Array2d, args[0]);
@@ -103,9 +100,9 @@ struct Array2d{
                 return self._get(col, row);
             }
 
-            if(is_non_tagged_type(xy[0], VM::tp_slice) && is_non_tagged_type(xy[1], VM::tp_slice)){
+            if(is_type(xy[0], VM::tp_slice) && is_type(xy[1], VM::tp_slice)){
                 HANDLE_SLICE();
-                PyObject* new_array_obj = vm->heap.gcnew<Array2d>(Array2d::_type(vm));
+                PyObject* new_array_obj = vm->new_user_object<Array2d>();
                 Array2d& new_array = PK_OBJ_GET(Array2d, new_array_obj);
                 new_array.init(stop_col - start_col, stop_row - start_row);
                 for(int j = start_row; j < stop_row; j++){
@@ -131,7 +128,7 @@ struct Array2d{
                 return;
             }
 
-            if(is_non_tagged_type(xy[0], VM::tp_slice) && is_non_tagged_type(xy[1], VM::tp_slice)){
+            if(is_type(xy[0], VM::tp_slice) && is_type(xy[1], VM::tp_slice)){
                 HANDLE_SLICE();
 
                 bool is_basic_type = false;
@@ -150,7 +147,7 @@ struct Array2d{
                     return;
                 }
 
-                if(!is_non_tagged_type(_2, Array2d::_type(vm))){
+                if(!vm->is_user_type<Array2d>(_2)){
                     vm->TypeError(_S("expected int/float/str/bool/None or an array2d instance"));
                 }
 
@@ -181,7 +178,7 @@ struct Array2d{
 
         vm->bind__len__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* _0){
             Array2d& self = PK_OBJ_GET(Array2d, _0);
-            return (i64)self.n_rows;
+            return (i64)self.numel;
         });
 
         vm->bind__repr__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* _0){
@@ -192,7 +189,7 @@ struct Array2d{
         vm->bind(type, "map(self, f)", [](VM* vm, ArgsView args){
             Array2d& self = PK_OBJ_GET(Array2d, args[0]);
             PyObject* f = args[1];
-            PyObject* new_array_obj = vm->heap.gcnew<Array2d>(Array2d::_type(vm));
+            PyObject* new_array_obj = vm->new_user_object<Array2d>();
             Array2d& new_array = PK_OBJ_GET(Array2d, new_array_obj);
             new_array.init(self.n_cols, self.n_rows);
             for(int i = 0; i < new_array.numel; i++){
@@ -203,7 +200,7 @@ struct Array2d{
 
         vm->bind(type, "copy(self)", [](VM* vm, ArgsView args){
             Array2d& self = PK_OBJ_GET(Array2d, args[0]);
-            PyObject* new_array_obj = vm->heap.gcnew<Array2d>(Array2d::_type(vm));
+            PyObject* new_array_obj = vm->new_user_object<Array2d>();
             Array2d& new_array = PK_OBJ_GET(Array2d, new_array_obj);
             new_array.init(self.n_cols, self.n_rows);
             for(int i = 0; i < new_array.numel; i++){
@@ -231,7 +228,7 @@ struct Array2d{
 
         vm->bind(type, "copy_(self, other)", [](VM* vm, ArgsView args){
             Array2d& self = PK_OBJ_GET(Array2d, args[0]);
-            if(is_non_tagged_type(args[1], VM::tp_list)){
+            if(is_type(args[1], VM::tp_list)){
                 const List& list = PK_OBJ_GET(List, args[1]);
                 if(list.size() != self.numel){
                     vm->ValueError("list size must be equal to the number of elements in the array2d");
@@ -255,7 +252,7 @@ struct Array2d{
 
         vm->bind__eq__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* _0, PyObject* _1){
             Array2d& self = PK_OBJ_GET(Array2d, _0);
-            if(!is_non_tagged_type(_1, Array2d::_type(vm))) return vm->NotImplemented;
+            if(!vm->is_user_type<Array2d>(_1)) return vm->NotImplemented;
             Array2d& other = PK_OBJ_GET(Array2d, _1);
             if(self.n_cols != other.n_cols || self.n_rows != other.n_rows) return vm->False;
             for(int i = 0; i < self.numel; i++){
@@ -264,14 +261,14 @@ struct Array2d{
             return vm->True;
         });
 
-        vm->bind(type, "count_neighbors(self, value, neighborhood='moore') -> array2d[int]", [](VM* vm, ArgsView args){
+        vm->bind(type, "count_neighbors(self, value, neighborhood='Moore') -> array2d[int]", [](VM* vm, ArgsView args){
             Array2d& self = PK_OBJ_GET(Array2d, args[0]);
-            PyObject* new_array_obj = vm->heap.gcnew<Array2d>(Array2d::_type(vm));
+            PyObject* new_array_obj = vm->new_user_object<Array2d>();
             Array2d& new_array = PK_OBJ_GET(Array2d, new_array_obj);
             new_array.init(self.n_cols, self.n_rows);
             PyObject* value = args[1];
             const Str& neighborhood = CAST(Str&, args[2]);
-            if(neighborhood == "moore"){
+            if(neighborhood == "Moore"){
                 for(int j = 0; j < new_array.n_rows; j++){
                     for(int i = 0; i < new_array.n_cols; i++){
                         int count = 0;
@@ -286,7 +283,7 @@ struct Array2d{
                         new_array._set(i, j, VAR(count));
                     }
                 }
-            }else if(neighborhood == "von_neumann"){
+            }else if(neighborhood == "von Neumann"){
                 for(int j = 0; j < new_array.n_rows; j++){
                     for(int i = 0; i < new_array.n_cols; i++){
                         int count = 0;
@@ -298,7 +295,7 @@ struct Array2d{
                     }
                 }
             }else{
-                vm->ValueError("neighborhood must be 'moore' or 'von_neumann'");
+                vm->ValueError("neighborhood must be 'Moore' or 'von Neumann'");
             }
             return new_array_obj; 
         });
@@ -344,10 +341,42 @@ struct Array2d{
     }
 };
 
+
+struct Array2dIter{
+    PK_ALWAYS_PASS_BY_POINTER(Array2dIter)
+
+    PyObject* ref;
+    int i;
+    Array2dIter(PyObject* ref) : ref(ref), i(0) {}
+
+    void _gc_mark() const{ PK_OBJ_MARK(ref); }
+
+    static void _register(VM* vm, PyObject* mod, PyObject* type){
+        vm->_all_types[PK_OBJ_GET(Type, type)].subclass_enabled = false;
+        vm->bind_notimplemented_constructor<Array2dIter>(type);
+        vm->bind__iter__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* _0) { return _0; });
+        vm->bind__next__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* _0) -> unsigned{
+            Array2dIter& self = PK_OBJ_GET(Array2dIter, _0);
+            Array2d& a = PK_OBJ_GET(Array2d, self.ref);
+            if(self.i == a.numel) return 0;
+            std::div_t res = std::div(self.i, a.n_cols);
+            vm->s_data.push(VAR(res.rem));
+            vm->s_data.push(VAR(res.quot));
+            vm->s_data.push(a.data[self.i++]);
+            return 3;
+        });
+    }
+};
+
 void add_module_array2d(VM* vm){
     PyObject* mod = vm->new_module("array2d");
 
-    Array2d::register_class(vm, mod);
+    vm->register_user_class<Array2d>(mod, "array2d", true);
+    vm->register_user_class<Array2dIter>(mod, "_array2d_iter");
+
+    vm->bind__iter__(vm->_tp_user<Array2d>(), [](VM* vm, PyObject* _0){
+        return vm->new_user_object<Array2dIter>(_0);
+    });
 }
 
 

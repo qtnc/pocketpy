@@ -4,12 +4,9 @@
 
 namespace pkpy{
 
-inline bool isclose(float a, float b){ return std::fabs(a - b) <= NumberTraits<4>::kEpsilon; }
+inline bool isclose(float a, float b){ return std::fabs(a - b) < 1e-4; }
 
 struct Vec2{
-    PY_CLASS(Vec2, linalg, vec2)
-
-    Vec2* _() { return this; }
     static void _register(VM* vm, PyObject* mod, PyObject* type);
 
     float x, y;
@@ -35,9 +32,6 @@ struct Vec2{
 };
 
 struct Vec3{
-    PY_CLASS(Vec3, linalg, vec3)
-
-    Vec3* _() { return this; }
     static void _register(VM* vm, PyObject* mod, PyObject* type);
 
     float x, y, z;
@@ -62,9 +56,6 @@ struct Vec3{
 };
 
 struct Vec4{
-    PY_CLASS(Vec4, linalg, vec4)
-
-    Vec4* _() { return this; }
     static void _register(VM* vm, PyObject* mod, PyObject* type);
 
     float x, y, z, w;
@@ -88,9 +79,6 @@ struct Vec4{
 };
 
 struct Mat3x3{
-    PY_CLASS(Mat3x3, linalg, mat3x3)
-
-    Mat3x3* _(){ return this; }
     static void _register(VM* vm, PyObject* mod, PyObject* type);
 
     union {

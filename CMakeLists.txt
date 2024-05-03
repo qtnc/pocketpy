@@ -12,7 +12,7 @@ else()
 
     # disable -Wshorten-64-to-32 for apple
     if(APPLE)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexceptions -frtti -Wno-shorten-64-to-32")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-shorten-64-to-32")
     endif()
 endif()
 
@@ -27,6 +27,11 @@ endif()
 option(PK_ENABLE_OS "" OFF)
 if(PK_ENABLE_OS)
     add_definitions(-DPK_ENABLE_OS=1)
+endif()
+
+option(PK_ENABLE_PROFILER "" OFF)
+if(PK_ENABLE_PROFILER)
+    add_definitions(-DPK_ENABLE_PROFILER=1)
 endif()
 
 option(PK_NO_EXPORT_C_API "" OFF)

@@ -294,7 +294,7 @@ static bool is_unicode_Lo_char(uint32_t c) {
             }
             // try integer
             i64 int_out;
-            switch(parse_int(text, &int_out, -1)){
+            switch(parse_uint(text, &int_out, -1)){
                 case IntParsingResult::Success:
                     add_token(TK("@num"), int_out);
                     return;
@@ -493,17 +493,18 @@ add_token_2('=', TK("not"), TK("!="));
     }
 
     std::vector<Token> Lexer::run() {
+        PK_ASSERT(curr_char == src->source.c_str());
         while (lex_one_token());
         return std::move(nexts);
     }
 
-IntParsingResult parse_int(std::string_view text, i64* out, int base){
-  *out = 0;
-
-  const auto f_startswith_2 = [](std::string_view t, const char* prefix) -> bool{
+inline constexpr bool f_startswith_2(std::string_view t, const char* prefix){
     if(t.length() < 2) return false;
     return t[0] == prefix[0] && t[1] == prefix[1];
-  };
+}
+
+IntParsingResult parse_uint(std::string_view text, i64* out, int base){
+  *out = 0;
 
   if(base == -1){
     if(f_startswith_2(text, "0b")) base = 2;

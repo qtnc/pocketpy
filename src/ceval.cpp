@@ -10,7 +10,7 @@ namespace pkpy{
 
 #define PREDICT_INT_DIV_OP(op)  \
     if(is_small_int(_0) && is_small_int(_1)){   \
-        if(_1 == PK_SMALL_INT(0)) ZeroDivisionError();   \
+        if(_1 == (PyObject*)0b10) ZeroDivisionError();   \
         TOP() = VAR((PK_BITS(_0)>>2) op (PK_BITS(_1)>>2)); \
         DISPATCH() \
     }
@@ -34,6 +34,29 @@ namespace pkpy{
             if(ret == NotImplemented) BinaryOptError(op, _0, _1);               \
         }
 
+
+void VM::_op_unpack_sequence(uint16_t arg){
+    PyObject* _0 = POPX();
+    if(is_type(_0, VM::tp_tuple)){
+        // fast path for tuple
+        Tuple& tuple = PK_OBJ_GET(Tuple, _0);
+        if(tuple.size() == arg){
+            for(PyObject* obj: tuple) PUSH(obj);
+        }else{
+            ValueError(_S("expected ", (int)arg, " values to unpack, got ", (int)tuple.size()));
+        }
+    }else{
+        auto _lock = heap.gc_scope_lock();  // lock the gc via RAII!!
+        _0 = py_iter(_0);
+        const PyTypeInfo* ti = _inst_type_info(_0);
+        for(int i=0; i<arg; i++){
+            PyObject* _1 = _py_next(ti, _0);
+            if(_1 == StopIteration) ValueError("not enough values to unpack");
+            PUSH(_1);
+        }
+        if(_py_next(ti, _0) != StopIteration) ValueError("too many values to unpack");
+    }
+}
 
 bool VM::py_lt(PyObject* _0, PyObject* _1){
     BINARY_F_COMPARE(__lt__, "<", __gt__);
@@ -72,11 +95,17 @@ PyObject* VM::_run_top_frame(){
  */
 {
 
-#define CEVAL_STEP_CALLBACK() \
-    if(_ceval_on_step) _ceval_on_step(this, frame, byte); \
-    if(_profiler) _profiler->_step(callstack._tail);
 
-#define DISPATCH_OP_CALL() { frame = top_frame(); goto __NEXT_FRAME; }
+#if PK_ENABLE_PROFILER
+#define CEVAL_STEP_CALLBACK() \
+    if(_ceval_on_step) _ceval_on_step(this, frame, byte);   \
+    if(_profiler) _profiler->_step(callstack.size(), frame);        \
+    if(!_next_breakpoint.empty()) { _next_breakpoint._step(this); }
+#else
+#define CEVAL_STEP_CALLBACK() \
+    if(_ceval_on_step) _ceval_on_step(this, frame, byte);
+#endif
+
 __NEXT_FRAME:
     // cache
     const CodeObject* co = frame->co;
@@ -92,7 +121,7 @@ __NEXT_STEP:;
 #if PK_DEBUG_CEVAL_STEP
     _log_s_data();
 #endif
-    switch (byte.op)
+    switch ((Opcode)byte.op)
     {
     TARGET(NO_OP) DISPATCH();
     /*****************************************/
@@ -112,35 +141,13 @@ __NEXT_STEP:;
     } DISPATCH();
     /*****************************************/
     TARGET(LOAD_CONST)
-        if(heap._should_auto_collect()) heap._auto_collect();
         PUSH(co->consts[byte.arg]);
         DISPATCH();
     TARGET(LOAD_NONE)       PUSH(None); DISPATCH();
     TARGET(LOAD_TRUE)       PUSH(True); DISPATCH();
     TARGET(LOAD_FALSE)      PUSH(False); DISPATCH();
     /*****************************************/
-    TARGET(LOAD_INT_NEG_5) PUSH((PyObject*)-18); DISPATCH();
-    TARGET(LOAD_INT_NEG_4) PUSH((PyObject*)-14); DISPATCH();
-    TARGET(LOAD_INT_NEG_3) PUSH((PyObject*)-10); DISPATCH();
-    TARGET(LOAD_INT_NEG_2) PUSH((PyObject*)-6); DISPATCH();
-    TARGET(LOAD_INT_NEG_1) PUSH((PyObject*)-2); DISPATCH();
-    TARGET(LOAD_INT_0)      PUSH(PK_SMALL_INT(0)); DISPATCH();
-    TARGET(LOAD_INT_1)      PUSH(PK_SMALL_INT(1)); DISPATCH();
-    TARGET(LOAD_INT_2)      PUSH(PK_SMALL_INT(2)); DISPATCH();
-    TARGET(LOAD_INT_3)      PUSH(PK_SMALL_INT(3)); DISPATCH();
-    TARGET(LOAD_INT_4)      PUSH(PK_SMALL_INT(4)); DISPATCH();
-    TARGET(LOAD_INT_5)      PUSH(PK_SMALL_INT(5)); DISPATCH();
-    TARGET(LOAD_INT_6)      PUSH(PK_SMALL_INT(6)); DISPATCH();
-    TARGET(LOAD_INT_7)      PUSH(PK_SMALL_INT(7)); DISPATCH();
-    TARGET(LOAD_INT_8)      PUSH(PK_SMALL_INT(8)); DISPATCH();
-    TARGET(LOAD_INT_9)      PUSH(PK_SMALL_INT(9)); DISPATCH();
-    TARGET(LOAD_INT_10)     PUSH(PK_SMALL_INT(10)); DISPATCH();
-    TARGET(LOAD_INT_11)     PUSH(PK_SMALL_INT(11)); DISPATCH();
-    TARGET(LOAD_INT_12)     PUSH(PK_SMALL_INT(12)); DISPATCH();
-    TARGET(LOAD_INT_13)     PUSH(PK_SMALL_INT(13)); DISPATCH();
-    TARGET(LOAD_INT_14)     PUSH(PK_SMALL_INT(14)); DISPATCH();
-    TARGET(LOAD_INT_15)     PUSH(PK_SMALL_INT(15)); DISPATCH();
-    TARGET(LOAD_INT_16)     PUSH(PK_SMALL_INT(16)); DISPATCH();
+    TARGET(LOAD_SMALL_INT)  PUSH((PyObject*)(uintptr_t)byte.arg); DISPATCH();
     /*****************************************/
     TARGET(LOAD_ELLIPSIS)   PUSH(Ellipsis); DISPATCH();
     TARGET(LOAD_FUNCTION) {
@@ -158,7 +165,6 @@ __NEXT_STEP:;
     TARGET(LOAD_NULL) PUSH(PY_NULL); DISPATCH();
     /*****************************************/
     TARGET(LOAD_FAST) {
-        if(heap._should_auto_collect()) heap._auto_collect();
         PyObject* _0 = frame->_locals[byte.arg];
         if(_0 == PY_NULL) vm->UnboundLocalError(co->varnames[byte.arg]);
         PUSH(_0);
@@ -180,7 +186,6 @@ __NEXT_STEP:;
         vm->NameError(_name);
     } DISPATCH();
     TARGET(LOAD_NONLOCAL) {
-        if(heap._should_auto_collect()) heap._auto_collect();
         StrName _name(byte.arg);
         PyObject* _0 = frame->f_closure_try_get(_name);
         if(_0 != nullptr) { PUSH(_0); DISPATCH(); }
@@ -191,7 +196,6 @@ __NEXT_STEP:;
         vm->NameError(_name);
     } DISPATCH();
     TARGET(LOAD_GLOBAL){
-        if(heap._should_auto_collect()) heap._auto_collect();
         StrName _name(byte.arg);
         PyObject* _0 = frame->f_globals().try_get_likely_found(_name);
         if(_0 != nullptr) { PUSH(_0); DISPATCH(); }
@@ -229,6 +233,27 @@ __NEXT_STEP:;
             TOP() = call_method(_0, __getitem__, _1);
         }
     } DISPATCH();
+    TARGET(LOAD_SUBSCR_FAST){
+        PyObject* _1 = frame->_locals[byte.arg];
+        if(_1 == PY_NULL) vm->UnboundLocalError(co->varnames[byte.arg]);
+        PyObject* _0 = TOP();     // a
+        auto _ti = _inst_type_info(_0);
+        if(_ti->m__getitem__){
+            TOP() = _ti->m__getitem__(this, _0, _1);
+        }else{
+            TOP() = call_method(_0, __getitem__, _1);
+        }
+    } DISPATCH();
+    TARGET(LOAD_SUBSCR_SMALL_INT){
+        PyObject* _1 = (PyObject*)(uintptr_t)byte.arg;
+        PyObject* _0 = TOP();     // a
+        auto _ti = _inst_type_info(_0);
+        if(_ti->m__getitem__){
+            TOP() = _ti->m__getitem__(this, _0, _1);
+        }else{
+            TOP() = call_method(_0, __getitem__, _1);
+        }
+    } DISPATCH();
     TARGET(STORE_FAST)
         frame->_locals[byte.arg] = POPX();
         DISPATCH();
@@ -254,6 +279,18 @@ __NEXT_STEP:;
     } DISPATCH();
     TARGET(STORE_SUBSCR){
         PyObject* _2 = POPX();        // b
+        PyObject* _1 = POPX();        // a
+        PyObject* _0 = POPX();        // val
+        auto _ti = _inst_type_info(_1);
+        if(_ti->m__setitem__){
+            _ti->m__setitem__(this, _1, _2, _0);
+        }else{
+            call_method(_1, __setitem__, _2, _0);
+        }
+    }DISPATCH();
+    TARGET(STORE_SUBSCR_FAST){
+        PyObject* _2 = frame->_locals[byte.arg];    // b
+        if(_2 == PY_NULL) vm->UnboundLocalError(co->varnames[byte.arg]);
         PyObject* _1 = POPX();        // a
         PyObject* _0 = POPX();        // val
         auto _ti = _inst_type_info(_1);
@@ -625,15 +662,20 @@ __NEXT_STEP:;
         TOP() = py_repr(TOP());
         DISPATCH();
     TARGET(CALL){
+        if(heap._should_auto_collect()) heap._auto_collect();
         PyObject* _0 = vectorcall(
             byte.arg & 0xFF,          // ARGC
             (byte.arg>>8) & 0xFF,     // KWARGC
             true
         );
-        if(_0 == PY_OP_CALL) DISPATCH_OP_CALL();
+        if(_0 == PY_OP_CALL){
+            frame = top_frame();
+            goto __NEXT_FRAME;
+        }
         PUSH(_0);
     } DISPATCH();
     TARGET(CALL_TP){
+        if(heap._should_auto_collect()) heap._auto_collect();
         PyObject* _0;
         PyObject* _1;
         PyObject* _2;
@@ -661,7 +703,10 @@ __NEXT_STEP:;
                 true
             );
         }
-        if(_0 == PY_OP_CALL) DISPATCH_OP_CALL();
+        if(_0 == PY_OP_CALL){
+            frame = top_frame();
+            goto __NEXT_FRAME;
+        }
         PUSH(_0);
     } DISPATCH();
     TARGET(RETURN_VALUE){
@@ -717,35 +762,60 @@ __NEXT_STEP:;
         DISPATCH();
     TARGET(FOR_ITER){
         PyObject* _0 = py_next(TOP());
-        if(_0 != StopIteration){
-            PUSH(_0);
-        }else{
-            frame->jump_abs_break(&s_data, co->_get_block_codei(frame->_ip).end);
-        }
+        if(_0 == StopIteration) frame->loop_break(&s_data, co);
+        else PUSH(_0);
     } DISPATCH();
     TARGET(FOR_ITER_STORE_FAST){
         PyObject* _0 = py_next(TOP());
-        if(_0 != StopIteration){
-            frame->_locals[byte.arg] = _0;
+        if(_0 == StopIteration){
+            frame->loop_break(&s_data, co);
         }else{
-            frame->jump_abs_break(&s_data, co->_get_block_codei(frame->_ip).end);
+            frame->_locals[byte.arg] = _0;
         }
     } DISPATCH()
     TARGET(FOR_ITER_STORE_GLOBAL){
         PyObject* _0 = py_next(TOP());
-        if(_0 != StopIteration){
-            frame->f_globals().set(StrName(byte.arg), _0);
+        if(_0 == StopIteration){
+            frame->loop_break(&s_data, co);
         }else{
-            frame->jump_abs_break(&s_data, co->_get_block_codei(frame->_ip).end);
+            frame->f_globals().set(StrName(byte.arg), _0);
         }
     } DISPATCH()
     TARGET(FOR_ITER_YIELD_VALUE){
         PyObject* _0 = py_next(TOP());
-        if(_0 != StopIteration){
+        if(_0 == StopIteration){
+            frame->loop_break(&s_data, co);
+        }else{
             PUSH(_0);
             return PY_OP_YIELD;
+        }
+    } DISPATCH()
+    TARGET(FOR_ITER_UNPACK){
+        PyObject* _0 = TOP();
+        const PyTypeInfo* _ti = _inst_type_info(_0);
+        if(_ti->m__next__){
+            unsigned n = _ti->m__next__(this, _0);
+            if(n == 0){
+                // StopIteration
+                frame->loop_break(&s_data, co);
+            }else if(n == 1){
+                // UNPACK_SEQUENCE
+                _op_unpack_sequence(byte.arg);
+            }else{
+                if(n != byte.arg){
+                    ValueError(_S("expected ", (int)byte.arg, " values to unpack, got ", (int)n));
+                }
+            }
         }else{
-            frame->jump_abs_break(&s_data, co->_get_block_codei(frame->_ip).end);
+            // FOR_ITER
+            _0 = call_method(_0, __next__);
+            if(_0 != StopIteration){
+                PUSH(_0);
+                // UNPACK_SEQUENCE
+                _op_unpack_sequence(byte.arg);
+            }else{
+                frame->loop_break(&s_data, co);
+            }
         }
     } DISPATCH()
     /*****************************************/
@@ -777,27 +847,21 @@ __NEXT_STEP:;
     } DISPATCH();
     /*****************************************/
     TARGET(UNPACK_SEQUENCE){
-        auto _lock = heap.gc_scope_lock();  // lock the gc via RAII!!
-        PyObject* _0 = py_iter(POPX());
-        for(int i=0; i<byte.arg; i++){
-            PyObject* _1 = py_next(_0);
-            if(_1 == StopIteration) ValueError("not enough values to unpack");
-            PUSH(_1);
-        }
-        if(py_next(_0) != StopIteration) ValueError("too many values to unpack");
+        _op_unpack_sequence(byte.arg);
     } DISPATCH();
     TARGET(UNPACK_EX) {
         auto _lock = heap.gc_scope_lock();  // lock the gc via RAII!!
         PyObject* _0 = py_iter(POPX());
+        const PyTypeInfo* _ti = _inst_type_info(_0);
         PyObject* _1;
         for(int i=0; i<byte.arg; i++){
-            _1 = py_next(_0);
+            _1 = _py_next(_ti, _0);
             if(_1 == StopIteration) ValueError("not enough values to unpack");
             PUSH(_1);
         }
         List extras;
         while(true){
-            _1 = py_next(_0);
+            _1 = _py_next(_ti, _0);
             if(_1 == StopIteration) break;
             extras.push_back(_1);
         }
@@ -808,20 +872,26 @@ __NEXT_STEP:;
         StrName _name(byte.arg);
         PyObject* _0 = POPX();   // super
         if(_0 == None) _0 = _t(tp_object);
-        check_non_tagged_type(_0, tp_type);
+        check_type(_0, tp_type);
         _curr_class = new_type_object(frame->_module, _name, PK_OBJ_GET(Type, _0));
     } DISPATCH();
     TARGET(END_CLASS) {
         PK_ASSERT(_curr_class != nullptr);
         StrName _name(byte.arg);
         frame->_module->attr().set(_name, _curr_class);
+        // call on_end_subclass
+        PyTypeInfo* ti = &_all_types[PK_OBJ_GET(Type, _curr_class)];
+        if(ti->base != tp_object){
+            PyTypeInfo* base_ti = &_all_types[ti->base];
+            if(base_ti->on_end_subclass) base_ti->on_end_subclass(this, ti);
+        }
         _curr_class = nullptr;
     } DISPATCH();
     TARGET(STORE_CLASS_ATTR){
         PK_ASSERT(_curr_class != nullptr);
         StrName _name(byte.arg);
         PyObject* _0 = POPX();
-        if(is_non_tagged_type(_0, tp_function)){
+        if(is_type(_0, tp_function)){
             PK_OBJ_GET(Function, _0)._class = _curr_class;
         }
         _curr_class->attr().set(_name, _0);
@@ -849,13 +919,13 @@ __NEXT_STEP:;
     /*****************************************/
     TARGET(EXCEPTION_MATCH) {
         PyObject* assumed_type = POPX();
-        check_non_tagged_type(assumed_type, tp_type);
+        check_type(assumed_type, tp_type);
         PyObject* e_obj = TOP();
         bool ok = isinstance(e_obj, PK_OBJ_GET(Type, assumed_type));
         PUSH(VAR(ok));
     } DISPATCH();
     TARGET(RAISE) {
-        if(is_non_tagged_type(TOP(), tp_type)){
+        if(is_type(TOP(), tp_type)){
             TOP() = call(TOP());
         }
         if(!isinstance(TOP(), tp_exception)){
@@ -903,24 +973,8 @@ __NEXT_STEP:;
         *p = VAR(CAST(i64, *p) - 1);
     } DISPATCH();
     /*****************************************/
-        static_assert(OP_DEC_GLOBAL == 137);
-        case 138: case 139: case 140: case 141: case 142: case 143: case 144: case 145: case 146: case 147: case 148: case 149:
-        case 150: case 151: case 152: case 153: case 154: case 155: case 156: case 157: case 158: case 159: case 160: case 161: case 162: case 163: case 164:
-        case 165: case 166: case 167: case 168: case 169: case 170: case 171: case 172: case 173: case 174: case 175: case 176: case 177: case 178: case 179:
-        case 180: case 181: case 182: case 183: case 184: case 185: case 186: case 187: case 188: case 189: case 190: case 191: case 192: case 193: case 194:
-        case 195: case 196: case 197: case 198: case 199: case 200: case 201: case 202: case 203: case 204: case 205: case 206: case 207: case 208: case 209:
-        case 210: case 211: case 212: case 213: case 214: case 215: case 216: case 217: case 218: case 219: case 220: case 221: case 222: case 223: case 224:
-        case 225: case 226: case 227: case 228: case 229: case 230: case 231: case 232: case 233: case 234: case 235: case 236: case 237: case 238: case 239:
-        case 240: case 241: case 242: case 243: case 244: case 245: case 246: case 247: case 248: case 249: case 250: case 251: case 252: case 253: case 254:
-        case 255: break;
     }
-
 }
-
-#undef DISPATCH
-#undef TARGET
-#undef DISPATCH_OP_CALL
-#undef CEVAL_STEP_CALLBACK
 /**********************************************************************/
             PK_UNREACHABLE()
         }catch(HandledException){
@@ -953,6 +1007,6 @@ __NEXT_STEP:;
 
 #undef DISPATCH
 #undef TARGET
-#undef DISPATCH_OP_CALL
+#undef CEVAL_STEP_CALLBACK
 
 } // namespace pkpy

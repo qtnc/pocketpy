@@ -9,6 +9,10 @@ namespace pkpy{
         return true;
     }
 
+    inline bool is_small_int(i64 value){
+        return value >= 0 && value < 1024;
+    }
+
     int CodeEmitContext::get_loop() const {
         int index = curr_block_i;
         while(index >= 0){
@@ -86,10 +90,9 @@ namespace pkpy{
     }
 
     int CodeEmitContext::emit_int(i64 value, int line){
-        bool allow_neg_int = is_negative_shift_well_defined() || value >= 0;
-        if(allow_neg_int && value >= -5 && value <= 16){
-            uint8_t op = OP_LOAD_INT_NEG_5 + (uint8_t)value + 5;
-            return emit_((Opcode)op, BC_NOARG, line);
+        if(is_small_int(value)){
+            value = (value << 2) | 0b10;
+            return emit_(OP_LOAD_SMALL_INT, (uint16_t)value, line);
         }else{
             return emit_(OP_LOAD_CONST, add_const(VAR(value)), line);
         }
@@ -129,7 +132,7 @@ namespace pkpy{
     }
 
     int CodeEmitContext::add_const(PyObject* v){
-        if(is_non_tagged_type(v, vm->tp_str)){
+        if(is_type(v, vm->tp_str)){
             // warning: should use add_const_string() instead
             return add_const_string(PK_OBJ_GET(Str, v).sv());
         }else{
@@ -360,10 +363,14 @@ namespace pkpy{
             Bytecode& prev = ctx->co->codes.back();
             if(prev.op == OP_BUILD_TUPLE && prev.arg == items.size()){
                 // build tuple and unpack it is meaningless
-                prev.op = OP_NO_OP;
-                prev.arg = BC_NOARG;
+                ctx->revert_last_emit_();
             }else{
-                ctx->emit_(OP_UNPACK_SEQUENCE, items.size(), line);
+                if(prev.op == OP_FOR_ITER){
+                    prev.op = OP_FOR_ITER_UNPACK;
+                    prev.arg = items.size();
+                }else{
+                    ctx->emit_(OP_UNPACK_SEQUENCE, items.size(), line);
+                }
             }
         }else{
             // starred assignment target must be in a tuple
@@ -414,7 +421,7 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
         int for_codei = ctx->emit_(OP_FOR_ITER, BC_NOARG, BC_KEEPLINE);
         bool ok = comp.vars->emit_store(ctx);
         // this error occurs in `vars` instead of this line, but...nevermind
-        PK_ASSERT(ok);  // TODO: raise a SyntaxError instead
+        if(!ok) throw std::runtime_error("SyntaxError");
         ctx->try_merge_for_iter_store(for_codei);
         if(comp.cond){
             comp.cond->emit_(ctx);
@@ -550,20 +557,35 @@ if (op!=OP_NO_OP && comp_index>0 && comp_index>=comps.size() -1)         ctx->em
     void SubscrExpr::emit_(CodeEmitContext* ctx){
         a->emit_(ctx);
         b->emit_(ctx);
-        ctx->emit_(OP_LOAD_SUBSCR, BC_NOARG, line);
+        Bytecode last_bc = ctx->co->codes.back();
+        if(b->is_name() && last_bc.op == OP_LOAD_FAST){
+            ctx->revert_last_emit_();
+            ctx->emit_(OP_LOAD_SUBSCR_FAST, last_bc.arg, line);
+        }else if(b->is_literal() && last_bc.op == OP_LOAD_SMALL_INT){
+            ctx->revert_last_emit_();
+            ctx->emit_(OP_LOAD_SUBSCR_SMALL_INT, last_bc.arg, line);
+        }else{
+            ctx->emit_(OP_LOAD_SUBSCR, BC_NOARG, line);
+        }
+    }
+
+    bool SubscrExpr::emit_store(CodeEmitContext* ctx){
+        a->emit_(ctx);
+        b->emit_(ctx);
+        Bytecode last_bc = ctx->co->codes.back();
+        if(b->is_name() && last_bc.op == OP_LOAD_FAST){
+            ctx->revert_last_emit_();
+            ctx->emit_(OP_STORE_SUBSCR_FAST, last_bc.arg, line);
+        }else{
+            ctx->emit_(OP_STORE_SUBSCR, BC_NOARG, line);
+        }
+        return true;
     }
 
     bool SubscrExpr::emit_del(CodeEmitContext* ctx){
         a->emit_(ctx);
         b->emit_(ctx);
         ctx->emit_(OP_DELETE_SUBSCR, BC_NOARG, line);
-        return true;
-    }
-
-    bool SubscrExpr::emit_store(CodeEmitContext* ctx){
-        a->emit_(ctx);
-        b->emit_(ctx);
-        ctx->emit_(OP_STORE_SUBSCR, BC_NOARG, line);
         return true;
     }
 

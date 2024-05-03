@@ -55,12 +55,7 @@ struct ValueStack {
     bool empty() const { return _sp == _begin; }
     PyObject** begin() { return _begin; }
     PyObject** end() { return _sp; }
-    void reset(PyObject** sp) {
-#if PK_DEBUG_EXTRA_CHECK
-        if(sp < _begin || sp > _begin + MAX_SIZE) PK_FATAL_ERROR();
-#endif
-        _sp = sp;
-    }
+    void reset(PyObject** sp) { _sp = sp; }
     void clear() { _sp = _begin; }
     bool is_overflow() const { return _sp >= _max_end; }
 
@@ -84,7 +79,7 @@ struct Frame {
     PyObject* _callable;    // a function object or nullptr (global scope)
     FastLocals _locals;
 
-    NameDict& f_globals() noexcept { return _module->attr(); }
+    NameDict& f_globals() { return _module->attr(); }
     PyObject* f_closure_try_get(StrName name);
 
     // function scope
@@ -101,9 +96,7 @@ struct Frame {
 
     int next_bytecode() {
         _ip = _next_ip++;
-#if PK_DEBUG_EXTRA_CHECK
-        if(_ip >= co->codes.size()) PK_FATAL_ERROR();
-#endif
+        PK_DEBUG_ASSERT(_ip >= 0 && _ip < co->codes.size());
         return _ip;
     }
 
@@ -116,6 +109,12 @@ struct Frame {
     bool jump_to_exception_handler(ValueStack*);
     int _exit_block(ValueStack*, int);
     void jump_abs_break(ValueStack*, int);
+
+    void loop_break(ValueStack* s_data, const CodeObject*){
+        jump_abs_break(s_data, co->_get_block_codei(_ip).end);
+    }
+
+    int curr_lineno() const { return co->lines[_ip].lineno; }
 
     void _gc_mark() const {
         PK_OBJ_MARK(_module);
@@ -150,16 +149,17 @@ struct CallStack{
     }
 
     void pop(){
-#if PK_DEBUG_EXTRA_CHECK
-        if(empty()) PK_FATAL_ERROR();
-#endif
+        PK_DEBUG_ASSERT(!empty())
         LinkedFrame* p = _tail;
         _tail = p->f_back;
         pool64_dealloc(p);
         --_size;
     }
 
-    Frame& top() const { return _tail->frame; }
+    Frame& top() const {
+        PK_DEBUG_ASSERT(!empty())
+        return _tail->frame;
+    }
 
     template<typename Func>
     void apply(Func&& f){

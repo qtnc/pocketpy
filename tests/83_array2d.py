@@ -53,7 +53,7 @@ a_list = [[5, 0], [0, 0], [0, 0], [0, 6]]
 assert a_list == a.tolist()
 
 # test __len__
-assert len(a) == 4
+assert len(a) == 4*2
 
 # test __eq__
 x = array2d(2, 4, default=0)
@@ -108,7 +108,7 @@ assert A().get(0, 0, default=2) == 0
 # test alive_neighbors
 a = array2d(3, 3, default=0)
 a[1, 1] = 1
-"""     moore    von_neumann
+"""     Moore    von Neumann
 0 0 0   1 1 1    0 1 0
 0 1 0   1 0 1    1 0 1
 0 0 0   1 1 1    0 1 0
@@ -118,8 +118,8 @@ moore_result[1, 1] = 0
 
 von_neumann_result = array2d(3, 3, default=0)
 von_neumann_result[0, 1] = von_neumann_result[1, 0] = von_neumann_result[1, 2] = von_neumann_result[2, 1] = 1
-a.count_neighbors(0, 'moore') == moore_result
-a.count_neighbors(0, 'von_neumann') == von_neumann_result
+a.count_neighbors(0, 'Moore') == moore_result
+a.count_neighbors(0, 'von Neumann') == von_neumann_result
 
 # test slice get
 a = array2d(5, 5, default=0)
@@ -166,3 +166,29 @@ try:
     exit(1)
 except TypeError:
     pass
+
+a = array2d(3, 4, default=1)
+for i, j, x in a:
+    assert a[i, j] == x
+
+assert len(a) == a.numel
+
+# stackoverflow bug due to recursive mark-and-sweep
+# class Cell:
+#     neighbors: list['Cell']
+
+# cells: array2d[Cell] = array2d(192, 108, default=Cell)
+# OutOfBounds = Cell()
+# for x, y, cell in cells:
+#     cell.neighbors = [
+#         cells.get(x-1, y-1, OutOfBounds),
+#         cells.get(x  , y-1, OutOfBounds),
+#         cells.get(x+1, y-1, OutOfBounds),
+#         cells.get(x-1, y  , OutOfBounds),
+#         cells.get(x+1, y  , OutOfBounds),
+#         cells.get(x  , y+1, OutOfBounds),
+#         cells.get(x+1, y+1, OutOfBounds),
+#     ]
+
+# import gc
+# gc.collect()

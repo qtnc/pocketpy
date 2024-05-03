@@ -349,8 +349,8 @@ assert test_mat_copy == test_mat.transpose()
 assert test_mat_copy.transpose() == test_mat_copy.transpose().transpose().transpose()
 
 # test inverse
-assert ~static_test_mat_float == static_test_mat_float_inv == static_test_mat_float.invert()
-assert static_test_mat_float.invert_() is None
+assert ~static_test_mat_float == static_test_mat_float_inv == static_test_mat_float.inverse()
+assert static_test_mat_float.inverse_() is None
 assert static_test_mat_float == static_test_mat_float_inv
 
 try:
@@ -438,6 +438,11 @@ test_mat_copy = test_mat.copy()
 test_vec2_copy = test_vec2.copy()
 temp_vec2 = test_mat_copy.transform_vector(test_vec2_copy)
 
+# test inverse_transform_point
+assert test_mat_copy.inverse_transform_point(test_vec2_copy) == test_mat_copy.inverse().transform_point(test_vec2_copy)
+# test inverse_transform_vector
+assert test_mat_copy.inverse_transform_vector(test_vec2_copy) == test_mat_copy.inverse().transform_vector(test_vec2_copy)
+
 import c
 a = vec2(1, 2)
 b = a.to_struct()
@@ -492,3 +497,8 @@ except IndexError:
 assert vec2(1, 2) * vec2(3, 4) == vec2(3, 8)
 assert vec3(1, 2, 3) * vec3(4, 5, 6) == vec3(4, 10, 18)
 assert vec4(1, 2, 3, 4) * vec4(5, 6, 7, 8) == vec4(5, 12, 21, 32)
+
+# test vec.__getitem__
+assert vec2(1, 2)[0] == 1 and vec2(1, 2)[1] == 2
+assert vec3(1, 2, 3)[0] == 1 and vec3(1, 2, 3)[1] == 2 and vec3(1, 2, 3)[2] == 3
+assert vec4(1, 2, 3, 4)[0] == 1 and vec4(1, 2, 3, 4)[1] == 2 and vec4(1, 2, 3, 4)[2] == 3 and vec4(1, 2, 3, 4)[3] == 4

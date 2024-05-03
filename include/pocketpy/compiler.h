@@ -19,7 +19,7 @@ struct PrattRule{
 class Compiler {
     PK_ALWAYS_PASS_BY_POINTER(Compiler)
 
-    inline static PrattRule rules[kTokenCount];
+    static PrattRule rules[kTokenCount];
 
     Lexer lexer;
     stack_no_copy<CodeEmitContext> contexts;
@@ -122,7 +122,24 @@ class Compiler {
 
 public:
     Compiler(VM* vm, std::string_view source, const Str& filename, CompileMode mode, bool unknown_global_scope=false);
+    Str precompile();
+    void from_precompiled(const char* source);
     CodeObject_ compile();
+};
+
+struct TokenDeserializer{
+    const char* curr;
+    const char* source;
+
+    TokenDeserializer(const char* source): curr(source), source(source) {}
+    char read_char(){ return *curr++; }
+    bool match_char(char c){ if(*curr == c) { curr++; return true; } return false; }
+    
+    std::string_view read_string(char c);
+    Str read_string_from_hex(char c);
+    int read_count();
+    i64 read_uint(char c);
+    f64 read_float(char c);
 };
 
 } // namespace pkpy

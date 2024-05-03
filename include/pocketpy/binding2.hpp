@@ -178,7 +178,7 @@ OP(getitem) OP(setitem) OP(delitem) OP(contains)
 OP(repr) OP(str)
 OP(iter) OP(next)
 OP(invert) OP(neg)
-OP(len) OP(bool) OP(hash)
+OP(len) OP(hash)
 #undef OP
 
 }; // Binder

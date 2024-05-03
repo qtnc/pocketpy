@@ -91,6 +91,11 @@ bool pkpy_exec_2(pkpy_vm* vm_handle, const char* source, const char* filename, i
     return res != nullptr;
 }
 
+void pkpy_set_main_argv(pkpy_vm* vm_handle, int argc, char** argv){
+    VM* vm = (VM*) vm_handle;
+    vm->set_main_argv(argc, argv);
+}
+
 bool pkpy_dup(pkpy_vm* vm_handle, int n){
     VM* vm = (VM*) vm_handle;
     PK_ASSERT_NO_ERROR()
@@ -215,7 +220,7 @@ bool pkpy_is_bool(pkpy_vm* vm_handle, int i){
     PK_ASSERT_NO_ERROR()
     PK_PROTECTED(
         PyObject* item = stack_item(vm, i);
-        return is_non_tagged_type(item, vm->tp_bool);
+        return is_type(item, vm->tp_bool);
     )
 }
 
@@ -243,7 +248,7 @@ bool pkpy_is_string(pkpy_vm* vm_handle, int i){
     PK_ASSERT_NO_ERROR()
     PK_PROTECTED(
         PyObject* item = stack_item(vm, i);
-        return is_non_tagged_type(item, vm->tp_str);
+        return is_type(item, vm->tp_str);
     )
 }
 
@@ -272,7 +277,7 @@ bool pkpy_is_voidp(pkpy_vm* vm_handle, int i){
     PK_ASSERT_NO_ERROR()
     PK_PROTECTED(
         PyObject* item = stack_item(vm, i);
-        return is_non_tagged_type(item, VoidP::_type(vm));
+        return vm->is_user_type<VoidP>(item);
     )
 }
 

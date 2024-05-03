@@ -13,6 +13,11 @@ namespace pkpy{
             index++;
         }
         this->source = ss.str();
+        if(this->source.size>5 && this->source.sv().substr(0, 5)=="pkpy:"){
+            this->is_precompiled = true;
+        }else{
+            this->is_precompiled = false;
+        }
         line_starts.push_back(this->source.c_str());
     }
 
@@ -21,7 +26,7 @@ namespace pkpy{
     }
 
     std::pair<const char*,const char*> SourceData::_get_line(int lineno) const {
-        if(lineno == -1) return {nullptr, nullptr};
+        if(is_precompiled || lineno == -1) return {nullptr, nullptr};
         lineno -= 1;
         if(lineno < 0) lineno = 0;
         const char* _start = line_starts[lineno];
@@ -31,11 +36,17 @@ namespace pkpy{
         return {_start, i};
     }
 
+    std::string_view SourceData::get_line(int lineno) const{
+        auto [_0, _1] = _get_line(lineno);
+        if(_0 && _1) return std::string_view(_0, _1-_0);
+        return "<?>";
+    }
+
     Str SourceData::snapshot(int lineno, const char* cursor, std::string_view name) const{
         SStream ss;
         ss << "  " << "File \"" << filename << "\", line " << lineno;
         if(!name.empty()) ss << ", in " << name;
-        if(!source.empty()){
+        if(!is_precompiled){
             ss << '\n';
             std::pair<const char*,const char*> pair = _get_line(lineno);
             Str line = "<?>";

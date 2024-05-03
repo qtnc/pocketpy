@@ -13,8 +13,6 @@ void add_module_operator(VM* vm){
 }
 
 struct PyStructTime{
-    PY_CLASS(PyStructTime, time, struct_time)
-
     int tm_year;
     int tm_mon;
     int tm_mday;
@@ -38,25 +36,23 @@ struct PyStructTime{
         tm_isdst = tm->tm_isdst;
     }
 
-    PyStructTime* _() { return this; }
-
     static void _register(VM* vm, PyObject* mod, PyObject* type){
         vm->bind_notimplemented_constructor<PyStructTime>(type);
-        PY_READONLY_FIELD(PyStructTime, "tm_year", _, tm_year);
-        PY_READONLY_FIELD(PyStructTime, "tm_mon", _, tm_mon);
-        PY_READONLY_FIELD(PyStructTime, "tm_mday", _, tm_mday);
-        PY_READONLY_FIELD(PyStructTime, "tm_hour", _, tm_hour);
-        PY_READONLY_FIELD(PyStructTime, "tm_min", _, tm_min);
-        PY_READONLY_FIELD(PyStructTime, "tm_sec", _, tm_sec);
-        PY_READONLY_FIELD(PyStructTime, "tm_wday", _, tm_wday);
-        PY_READONLY_FIELD(PyStructTime, "tm_yday", _, tm_yday);
-        PY_READONLY_FIELD(PyStructTime, "tm_isdst", _, tm_isdst);
+        PY_READONLY_FIELD(PyStructTime, "tm_year", tm_year);
+        PY_READONLY_FIELD(PyStructTime, "tm_mon", tm_mon);
+        PY_READONLY_FIELD(PyStructTime, "tm_mday", tm_mday);
+        PY_READONLY_FIELD(PyStructTime, "tm_hour", tm_hour);
+        PY_READONLY_FIELD(PyStructTime, "tm_min", tm_min);
+        PY_READONLY_FIELD(PyStructTime, "tm_sec", tm_sec);
+        PY_READONLY_FIELD(PyStructTime, "tm_wday", tm_wday);
+        PY_READONLY_FIELD(PyStructTime, "tm_yday", tm_yday);
+        PY_READONLY_FIELD(PyStructTime, "tm_isdst", tm_isdst);
     }
 };
 
 void add_module_time(VM* vm){
     PyObject* mod = vm->new_module("time");
-    PyStructTime::register_class(vm, mod);
+    vm->register_user_class<PyStructTime>(mod, "struct_time");
 
     vm->bind_func<0>(mod, "time", [](VM* vm, ArgsView args) {
         auto now = std::chrono::system_clock::now();
@@ -77,7 +73,7 @@ void add_module_time(VM* vm){
     vm->bind_func<0>(mod, "localtime", [](VM* vm, ArgsView args) {
         auto now = std::chrono::system_clock::now();
         std::time_t t = std::chrono::system_clock::to_time_t(now);
-        return VAR_T(PyStructTime, t);
+        return vm->new_user_object<PyStructTime>(t);
     });
 }
 
@@ -108,7 +104,7 @@ void add_module_json(VM* vm){
     PyObject* mod = vm->new_module("json");
     vm->bind_func<1>(mod, "loads", [](VM* vm, ArgsView args) {
         std::string_view sv;
-        if(is_non_tagged_type(args[0], vm->tp_bytes)){
+        if(is_type(args[0], vm->tp_bytes)){
             sv = PK_OBJ_GET(Bytes, args[0]).sv();
         }else{
             sv = CAST(Str&, args[0]).sv();
@@ -166,7 +162,7 @@ void add_module_math(VM* vm){
     vm->bind_func<2>(mod, "isclose", [](VM* vm, ArgsView args) {
         f64 a = CAST_F(args[0]);
         f64 b = CAST_F(args[1]);
-        return VAR(std::fabs(a - b) <= Number::kEpsilon);
+        return VAR(std::fabs(a - b) < 1e-9);
     });
 
     vm->bind_func<1>(mod, "exp", PK_LAMBDA(VAR(std::exp(CAST_F(args[0])))));
@@ -250,6 +246,43 @@ void add_module_gc(VM* vm){
     vm->bind_func<0>(mod, "collect", PK_LAMBDA(VAR(vm->heap.collect())));
 }
 
+void add_module_enum(VM* vm){
+    PyObject* mod = vm->new_module("enum");
+    CodeObject_ code = vm->compile(kPythonLibs__enum, "enum.py", EXEC_MODE);
+    vm->_exec(code, mod);
+    PyObject* Enum = mod->attr("Enum");
+    vm->_all_types[PK_OBJ_GET(Type, Enum).index].on_end_subclass = \
+        [](VM* vm, PyTypeInfo* new_ti){
+            new_ti->subclass_enabled = false;    // Enum class cannot be subclassed twice
+            NameDict& attr = new_ti->obj->attr();
+            for(auto [k, v]: attr.items()){
+                // wrap every attribute
+                std::string_view k_sv = k.sv();
+                if(k_sv.empty() || k_sv[0] == '_') continue;
+                attr.set(k, vm->call(new_ti->obj, VAR(k_sv), v));
+            }
+        };
+}
+
+void add_module___builtins(VM* vm){
+    PyObject* mod = vm->new_module("__builtins");
+
+    vm->bind_func<1>(mod, "next", [](VM* vm, ArgsView args){
+        return vm->py_next(args[0]);
+    });
+
+    vm->bind_func<1>(mod, "_enable_instance_dict", [](VM* vm, ArgsView args){
+        PyObject* self = args[0];
+        if(is_tagged(self)) vm->TypeError("object: tagged object cannot enable instance dict");
+        if(self->is_attr_valid()) vm->RuntimeError("object: instance dict is already enabled");
+        self->_enable_instance_dict();
+        return vm->None;
+    });
+}
+
+
+/************************************************/
+#if PK_ENABLE_PROFILER
 struct LineProfilerW;
 struct _LpGuard{
     PK_ALWAYS_PASS_BY_POINTER(_LpGuard)
@@ -261,16 +294,17 @@ struct _LpGuard{
 
 // line_profiler wrapper
 struct LineProfilerW{
-    PY_CLASS(LineProfilerW, line_profiler, LineProfiler)
-
     LineProfiler profiler;
 
     static void _register(VM* vm, PyObject* mod, PyObject* type){
-        vm->bind_default_constructor<LineProfilerW>(type);
+        vm->bind_func<1>(type, __new__, [](VM* vm, ArgsView args){
+            Type cls = PK_OBJ_GET(Type, args[0]);
+            return vm->heap.gcnew<LineProfilerW>(cls);
+        });
 
         vm->bind(type, "add_function(self, func)", [](VM* vm, ArgsView args){
             LineProfilerW& self = PK_OBJ_GET(LineProfilerW, args[0]);
-            vm->check_non_tagged_type(args[1], VM::tp_function);
+            vm->check_type(args[1], VM::tp_function);
             auto decl = PK_OBJ_GET(Function, args[1]).decl.get();
             self.profiler.functions.insert(decl);
             return vm->None;
@@ -312,7 +346,12 @@ _LpGuard::~_LpGuard(){
 
 void add_module_line_profiler(VM *vm){
     PyObject* mod = vm->new_module("line_profiler");
-    LineProfilerW::register_class(vm, mod);
+    vm->register_user_class<LineProfilerW>(mod, "LineProfiler");
 }
+#else
+void add_module_line_profiler(VM* vm){
+    (void)vm;
+}
+#endif
 
 }   // namespace pkpy

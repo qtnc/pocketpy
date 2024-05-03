@@ -62,9 +62,9 @@ assert 1/inf == 0
 assert -1/inf == 0
 assert math.isnan(0/0)
 
-assert 2**-600 == 0.0
-assert 2.0 ** 600 == inf
-assert (-2.0) ** 601 == -inf
+assert 2**-6000 == 0.0
+assert 2.0 ** 6000 == inf
+assert (-2.0) ** 6001 == -inf
 
 # test .123 forms
 assert float(".123") == 0.123
@@ -90,3 +90,8 @@ assert -2e-3j == -0.002j
 assert 3.4e-3 == 0.0034
 assert 3.4e+3 == 3400.0
 
+try:
+    float('-x13')
+    exit(1)
+except ValueError:
+    pass

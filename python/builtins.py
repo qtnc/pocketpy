@@ -1,8 +1,9 @@
-import sys as _sys
-
-def print(*args, sep=' ', end='\n'):
-    s = sep.join([str(i) for i in args])
-    _sys.stdout.write(s + end)
+from __builtins import next as __builtins_next
+# import sys as _sys
+#
+#def print(*args, sep=' ', end='\n'):
+#    s = sep.join([str(i) for i in args])
+#    _sys.stdout.write(s + end)
 
 def reduce(func, *args, default=None):
     if len(args) == 0:
@@ -10,11 +11,11 @@ def reduce(func, *args, default=None):
     if len(args) == 1:
         args = args[0]
     args = iter(args)
-    res = next(args) if default is None else default
+    res = __builtins_next(args) if default is None else default
     if res is StopIteration:
         raise ValueError('args is an empty sequence')
     while True:
-        i = next(args)
+        i = __builtins_next(args)
         if i is StopIteration:
             break
         res = func(i, res)
@@ -67,7 +68,7 @@ def zip(*args):
     argc = len(args)
     its = [iter(x) for x in args]
     while True:
-        l = [next(x) for x in its]
+        l = [__builtins_next(x) for x in its]
         c = 0
         for x in l: ++c
         if c<argc: break

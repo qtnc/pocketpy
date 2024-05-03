@@ -7,7 +7,6 @@
 namespace pkpy{
 
 struct RangeIter{
-    PY_CLASS(RangeIter, builtins, _range_iterator)
     Range r;
     i64 current;
     RangeIter(Range r) : r(r), current(r.start) {}
@@ -16,7 +15,6 @@ struct RangeIter{
 };
 
 struct ArrayIter{
-    PY_CLASS(ArrayIter, builtins, _array_iterator)
     PyObject* ref;
     PyObject** begin;
     PyObject** end;
@@ -30,20 +28,14 @@ struct ArrayIter{
 };
 
 struct StringIter{
-    PY_CLASS(StringIter, builtins, _string_iterator)
     PyObject* ref;
-    Str* str;
-    int index;      // byte index
-
-    StringIter(PyObject* ref) : ref(ref), str(&PK_OBJ_GET(Str, ref)), index(0) {}
-
+    int i;      // byte index
+    StringIter(PyObject* ref) : ref(ref), i(0) {}
     void _gc_mark() const{ PK_OBJ_MARK(ref); }
-
     static void _register(VM* vm, PyObject* mod, PyObject* type);
 };
 
 struct Generator{
-    PY_CLASS(Generator, builtins, generator)
     Frame frame;
     int state;      // 0,1,2
     List s_backup;
@@ -58,6 +50,16 @@ struct Generator{
     }
 
     PyObject* next(VM* vm);
+    static void _register(VM* vm, PyObject* mod, PyObject* type);
+};
+
+struct DictItemsIter{
+    PyObject* ref;
+    int i;
+    DictItemsIter(PyObject* ref) : ref(ref) {
+        i = PK_OBJ_GET(Dict, ref)._head_idx;
+    }
+    void _gc_mark() const{ PK_OBJ_MARK(ref); }
     static void _register(VM* vm, PyObject* mod, PyObject* type);
 };
 

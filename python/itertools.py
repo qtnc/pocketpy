@@ -1,3 +1,5 @@
+from __builtins import next
+
 def accumulate (it, func=None, initial=None):
   if func is None: func = lambda a, b: a+b
   total = initial

@@ -112,31 +112,15 @@ struct Point{
 }
 ```
 
-You can write a wrapper class `wrapped__Point`. Add `PY_CLASS` macro into your wrapper class and implement a static function `_register`.
-
+You can write a wrapper class `wrapped__Point`. Add implement a static function `_register`.
 Inside the `_register` function, do bind methods and properties.
-
-```cpp
-PY_CLASS(T, mod, name)
-
-// T is the struct type in cpp
-// mod is the module name in python
-// name is the class name in python
-```
 
 ### Example
 
 ```cpp
 struct wrapped__Point{
-    // special macro for wrapper class
-    PY_CLASS(wrapped__Point, builtins, Point)
-    //       ^T              ^module   ^name
-
     // wrapped value
     Point value;
-
-    // special method _ returns a pointer of the wrapped value
-    Point* _() { return &value; }
 
     // define default constructors
     wrapped__Point() = default;
@@ -148,14 +132,10 @@ struct wrapped__Point{
     }
 
     static void _register(VM* vm, PyObject* mod, PyObject* type){
-        // enable default constructor and struct-like methods
-        // if you don't use this, you must bind a `__new__` method as constructor
-        PY_STRUCT_LIKE(wrapped__Point)
-
         // wrap field x
-        PY_FIELD(wrapped__Point, "x", _, x)
+        PY_FIELD(wrapped__Point, "x", value.x)
         // wrap field y
-        PY_FIELD(wrapped__Point, "y", _, y)
+        PY_FIELD(wrapped__Point, "y", value.y)
 
         // __init__ method
         vm->bind(type, "__init__(self, x, y)", [](VM* vm, ArgsView args){
@@ -172,8 +152,8 @@ struct wrapped__Point{
 
 int main(){
     VM* vm = new VM();
-    // register the wrapper class somewhere
-    wrapped__Point::register_class(vm, vm->builtins);
+    // register the wrapper class in builtins
+    vm->register_user_class<wrapped__Point>(vm->builtins, "Point");
 
     // use the Point class
     vm->exec("a = Point(1, 2)");
@@ -191,8 +171,6 @@ If your custom type stores `PyObject*` in its fields, you need to handle gc for 
 
 ```cpp
 struct Container{
-    PY_CLASS(Container, builtins, Container)
-
     PyObject* a;
     std::vector<PyObject*> b;
     // ...
@@ -203,8 +181,6 @@ Add a magic method `_gc_mark() const` to your custom type.
 
 ```cpp
 struct Container{
-    PY_CLASS(Container, builtins, Container)
-
     PyObject* a;
     std::vector<PyObject*> b;
     // ...

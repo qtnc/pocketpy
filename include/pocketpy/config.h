@@ -1,11 +1,5 @@
 #pragma once
 
-#ifdef PK_USER_CONFIG_H
-
-#include "user_config.h"
-
-#else
-
 /*************** feature settings ***************/
 
 // Whether to compile os-related modules or not
@@ -17,6 +11,11 @@
 // This triggers necessary locks to make the VM thread-safe
 #ifndef PK_ENABLE_THREAD            // can be overridden by cmake
 #define PK_ENABLE_THREAD            0
+#endif
+
+// Enable `line_profiler` module and `breakpoint()` function
+#ifndef PK_ENABLE_PROFILER          // can be overridden by cmake
+#define PK_ENABLE_PROFILER          0
 #endif
 
 // GC min threshold
@@ -40,11 +39,14 @@
 #define PK_DEBUG_NO_BUILTINS        0
 #define PK_DEBUG_DIS_EXEC           0
 #define PK_DEBUG_CEVAL_STEP         0
-#define PK_DEBUG_FULL_EXCEPTION     0
 #define PK_DEBUG_MEMORY_POOL        0
 #define PK_DEBUG_NO_MEMORY_POOL     0
 #define PK_DEBUG_NO_AUTO_GC         0
 #define PK_DEBUG_GC_STATS           0
+
+#ifndef PK_DEBUG_PRECOMPILED_EXEC
+#define PK_DEBUG_PRECOMPILED_EXEC   0
+#endif
 
 /*************** internal settings ***************/
 
@@ -79,7 +81,4 @@
 #define PK_UNREACHABLE()			__assume(0);
 #else
 #define PK_UNREACHABLE()			__builtin_unreachable();
-#endif
-
-
 #endif

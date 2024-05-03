@@ -1,6 +1,7 @@
 #include "pocketpy/compiler.h"
 
 namespace pkpy{
+    PrattRule Compiler::rules[kTokenCount];
 
     NameScope Compiler::name_scope() const {
         auto s = contexts.size()>1 ? NAME_LOCAL : NAME_GLOBAL;
@@ -62,19 +63,49 @@ namespace pkpy{
         // pre-compute func->is_simple
         FuncDecl_ func = contexts.top().func;
         if(func){
-            func->is_simple = true;
-            if(func->code->is_generator) func->is_simple = false;
-            if(func->kwargs.size() > 0) func->is_simple = false;
-            if(func->starred_arg >= 0) func->is_simple = false;
-            if(func->starred_kwarg >= 0) func->is_simple = false;
+            // check generator
+            for(Bytecode bc: func->code->codes){
+                if(bc.op == OP_YIELD_VALUE || bc.op == OP_FOR_ITER_YIELD_VALUE){
+                    func->type = FuncType::GENERATOR;
+                    for(Bytecode bc: func->code->codes){
+                        if(bc.op == OP_RETURN_VALUE && bc.arg == BC_NOARG){
+                            SyntaxError("'return' with argument inside generator function");
+                        }
+                    }
+                    break;
+                }
+            }
+            if(func->type == FuncType::UNSET){
+                bool is_simple = true;
+                if(func->kwargs.size() > 0) is_simple = false;
+                if(func->starred_arg >= 0) is_simple = false;
+                if(func->starred_kwarg >= 0) is_simple = false;
+
+                if(is_simple){
+                    func->type = FuncType::SIMPLE;
+
+                    bool is_empty = false;
+                    if(func->code->codes.size() == 1){
+                        Bytecode bc = func->code->codes[0];
+                        if(bc.op == OP_RETURN_VALUE && bc.arg == 1){
+                            is_empty = true;
+                        }
+                    }
+                    if(is_empty) func->type = FuncType::EMPTY;
+                }
+                else func->type = FuncType::NORMAL;
+            }
+
+            PK_ASSERT(func->type != FuncType::UNSET);
         }
         contexts.pop();
     }
 
     void Compiler::init_pratt_rules(){
-        PK_LOCAL_STATIC unsigned int count = 0;
-        if(count > 0) return;
-        count += 1;
+        PK_LOCAL_STATIC bool initialized = false;
+        if(initialized) return;
+        initialized = true;
+
 // http://journal.stuffwithstuff.com/2011/03/19/pratt-parsers-expression-parsing-made-easy/
 #define PK_METHOD(name) &Compiler::name
 #define PK_NO_INFIX nullptr, PREC_LOWEST
@@ -405,9 +436,7 @@ ce->comps.emplace_back(std::move(comp));
 void Compiler::exprGenComp(int prev_i){
 ctx()->s_expr.popx();
         FuncDecl_ decl = push_f_context("<generator>");
-decl->signature = "<generator>";
-decl->is_simple = false;
-decl->code->is_generator = true;
+decl->type = FuncType::GENERATOR;
 i = prev_i;
         EXPR_TUPLE();   // () is just for change precedence
         match_newlines_repl();
@@ -846,16 +875,13 @@ __EAT_DOTS_END:
             case TK("yield"): 
                 if (contexts.size() <= 1) SyntaxError("'yield' outside function");
                 EXPR_TUPLE(); ctx()->emit_expr();
-                // if yield present, mark the function as generator
-                ctx()->co->is_generator = true;
                 ctx()->emit_(OP_YIELD_VALUE, BC_NOARG, kw_line);
                 consume_end_stmt();
                 break;
             case TK("yield from"):
                 if (contexts.size() <= 1) SyntaxError("'yield from' outside function");
                 EXPR_TUPLE(); ctx()->emit_expr();
-                // if yield from present, mark the function as generator
-                ctx()->co->is_generator = true;
+
                 ctx()->emit_(OP_GET_ITER, BC_NOARG, kw_line);
                 ctx()->enter_block(CodeBlockType::FOR_LOOP);
                 ctx()->emit_(OP_FOR_ITER_YIELD_VALUE, BC_NOARG, kw_line);
@@ -869,8 +895,6 @@ __EAT_DOTS_END:
                     ctx()->emit_(OP_RETURN_VALUE, 1, kw_line);
                 }else{
                     EXPR_TUPLE(); ctx()->emit_expr();
-                    // check if it is a generator
-                    if(ctx()->co->is_generator) SyntaxError("'return' with argument inside generator function");
                     consume_end_stmt();
                     ctx()->emit_(OP_RETURN_VALUE, BC_NOARG, kw_line);
                 }
@@ -1145,7 +1169,6 @@ __EAT_DOTS_END:
     }
 
     void Compiler::compile_function(const Expr_vector& decorators){
-        const char* _start = curr().start;
         consume(TK("@id"));
         Str decl_name = prev().str();
         FuncDecl_ decl = push_f_context(decl_name);
@@ -1155,22 +1178,17 @@ __EAT_DOTS_END:
             consume(TK(")"));
         }
         if(match(TK("->"))) consume_type_hints();
-        const char* _end = curr().start;
-        decl->signature = Str(_start, _end-_start);
         compile_block_body();
         pop_context();
 
-        PyObject* docstring = nullptr;
+        decl->docstring = nullptr;
         if(decl->code->codes.size()>=2 && decl->code->codes[0].op == OP_LOAD_CONST && decl->code->codes[1].op == OP_POP_TOP){
             PyObject* c = decl->code->consts[decl->code->codes[0].arg];
             if(is_type(c, vm->tp_str)){
                 decl->code->codes[0].op = OP_NO_OP;
                 decl->code->codes[1].op = OP_NO_OP;
-                docstring = c;
+                decl->docstring = PK_OBJ_GET(Str, c).c_str();
             }
-        }
-        if(docstring != nullptr){
-            decl->docstring = PK_OBJ_GET(Str, docstring);
         }
         ctx()->emit_(OP_LOAD_FUNCTION, ctx()->add_func_decl(decl), prev().line);
 
@@ -1237,11 +1255,122 @@ __EAT_DOTS_END:
         init_pratt_rules();
     }
 
+    Str Compiler::precompile(){
+        auto tokens = lexer.run();
+        SStream ss;
+        ss << "pkpy:" PK_VERSION << '\n';           // L1: version string
+        ss << (int)mode() << '\n';                  // L2: mode
+
+        std::map<std::string_view, int> token_indices;
+        for(auto token: tokens){
+            if(is_raw_string_used(token.type)){
+                auto it = token_indices.find(token.sv());
+                if(it == token_indices.end()){
+                    token_indices[token.sv()] = 0;
+                    // assert no '\n' in token.sv()
+                    for(char c: token.sv()) if(c=='\n') PK_FATAL_ERROR();
+                }
+            }
+        }
+        ss << "=" << (int)token_indices.size() << '\n';         // L3: raw string count
+        int index = 0;
+        for(auto& kv: token_indices){
+            ss << kv.first << '\n';    // L4: raw strings
+            kv.second = index++;
+        }
+        
+        ss << "=" << (int)tokens.size() << '\n';    // L5: token count
+        for(int i=0; i<tokens.size(); i++){
+            const Token& token = tokens[i];
+            ss << (int)token.type << ',';
+            if(is_raw_string_used(token.type)){
+                ss << token_indices[token.sv()] << ',';
+            }
+            if(i>0 && tokens[i-1].line == token.line) ss << ',';
+            else ss << token.line << ',';
+            if(i>0 && tokens[i-1].brackets_level == token.brackets_level) ss << ',';
+            else ss << token.brackets_level << ',';
+            // visit token value
+            std::visit([&ss](auto&& arg){
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr(std::is_same_v<T, i64>){
+                    ss << 'I' << arg;
+                }else if constexpr(std::is_same_v<T, f64>){
+                    ss << 'F' << arg;
+                }else if constexpr(std::is_same_v<T, Str>){
+                    ss << 'S';
+                    for(char c: arg) ss.write_hex((unsigned char)c);
+                }
+                ss << '\n';
+            }, token.value);
+        }
+        return ss.str();
+    }
+
+    void Compiler::from_precompiled(const char* source){
+        TokenDeserializer deserializer(source);
+        deserializer.curr += 5;     // skip "pkpy:"
+        std::string_view version = deserializer.read_string('\n');
+
+        if(version != PK_VERSION){
+            Str error = _S("precompiled version mismatch: ", version, "!=" PK_VERSION);
+            throw std::runtime_error(error.c_str());
+        }
+        if(deserializer.read_uint('\n') != (i64)mode()){
+            throw std::runtime_error("precompiled mode mismatch");
+        }
+
+        int count = deserializer.read_count();
+        std::vector<Str>& precompiled_tokens = lexer.src->_precompiled_tokens;
+        for(int i=0; i<count; i++){
+            precompiled_tokens.push_back(deserializer.read_string('\n'));
+        }
+
+        count = deserializer.read_count();
+        for(int i=0; i<count; i++){
+            Token t;
+            t.type = (unsigned char)deserializer.read_uint(',');
+            if(is_raw_string_used(t.type)){
+                i64 index = deserializer.read_uint(',');
+                t.start = precompiled_tokens[index].c_str();
+                t.length = precompiled_tokens[index].size;
+            }else{
+                t.start = nullptr;
+                t.length = 0;
+            }
+
+            if(deserializer.match_char(',')){
+                t.line = tokens.back().line;
+            }else{
+                t.line = (int)deserializer.read_uint(',');
+            }
+
+            if(deserializer.match_char(',')){
+                t.brackets_level = tokens.back().brackets_level;
+            }else{
+                t.brackets_level = (int)deserializer.read_uint(',');
+            }
+
+            char type = deserializer.read_char();
+            switch(type){
+                case 'I': t.value = deserializer.read_uint('\n'); break;
+                case 'F': t.value = deserializer.read_float('\n'); break;
+                case 'S': t.value = deserializer.read_string_from_hex('\n'); break;
+                default: t.value = {}; break;
+            }
+            tokens.push_back(t);
+        }
+    }
 
     CodeObject_ Compiler::compile(){
         PK_ASSERT(i == 0)       // make sure it is the first time to compile
 
-        tokens = lexer.run();
+        if(lexer.src->is_precompiled){
+            from_precompiled(lexer.src->source.c_str());
+        }else{
+            this->tokens = lexer.run();
+        }
+
         CodeObject_ code = push_global_context();
 
         advance();          // skip @sof, so prev() is always valid
@@ -1278,5 +1407,52 @@ __EAT_DOTS_END:
         Exception& e = PK_OBJ_GET(Exception, e_obj);
         e.st_push(src, lineno, cursor, "");
         throw e;
+    }
+
+    std::string_view TokenDeserializer::read_string(char c){
+        const char* start = curr;
+        while(*curr != c) curr++;
+        std::string_view retval(start, curr-start);
+        curr++;     // skip the delimiter
+        return retval;
+    }
+
+    Str TokenDeserializer::read_string_from_hex(char c){
+        std::string_view s = read_string(c);
+        char* buffer = (char*)pool64_alloc(s.size()/2 + 1);
+        for(int i=0; i<s.size(); i+=2){
+            char c = 0;
+            if(s[i]>='0' && s[i]<='9') c += s[i]-'0';
+            else if(s[i]>='a' && s[i]<='f') c += s[i]-'a'+10;
+            else PK_FATAL_ERROR();
+            c <<= 4;
+            if(s[i+1]>='0' && s[i+1]<='9') c += s[i+1]-'0';
+            else if(s[i+1]>='a' && s[i+1]<='f') c += s[i+1]-'a'+10;
+            else PK_FATAL_ERROR();
+            buffer[i/2] = c;
+        }
+        buffer[s.size()/2] = 0;
+        return std::pair<char*, int>(buffer, s.size()/2);
+    }
+
+    int TokenDeserializer::read_count(){
+        PK_ASSERT(*curr == '=')
+        curr++;
+        return read_uint('\n');
+    }
+
+    i64 TokenDeserializer::read_uint(char c){
+        i64 out = 0;
+        while(*curr != c){
+            out = out*10 + (*curr-'0');
+            curr++;
+        }
+        curr++;     // skip the delimiter
+        return out;
+    }
+
+    f64 TokenDeserializer::read_float(char c){
+        std::string_view sv = read_string(c);
+        return std::stod(std::string(sv));
     }
 }   // namespace pkpy

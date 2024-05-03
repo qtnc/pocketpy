@@ -1,3 +1,5 @@
+from __builtins import next
+
 a = [1, 2, 3]
 a = iter(a)
 
@@ -36,3 +38,16 @@ assert next(i) == 4
 assert next(i) == 5
 assert next(i) == StopIteration
 assert next(i) == StopIteration
+
+# test normal next
+from builtins import next
+
+a = iter([1])
+assert next(a) == 1
+
+try:
+    next(a)
+    exit(1)
+except StopIteration:
+    pass
+

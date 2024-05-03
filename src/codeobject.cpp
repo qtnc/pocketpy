@@ -3,7 +3,7 @@
 namespace pkpy{
 
     CodeObject::CodeObject(std::shared_ptr<SourceData> src, const Str& name):
-        src(src), name(name), is_generator(false), start_line(-1), end_line(-1) {
+        src(src), name(name), start_line(-1), end_line(-1) {
             blocks.push_back(CodeBlock(CodeBlockType::NO_BLOCK, -1, 0, 0));
         }
 
@@ -23,4 +23,13 @@ namespace pkpy{
         this->argc = -1;
         this->decl = decl;
     }
+
+    struct PySignalObject: PyObject {
+        PySignalObject() : PyObject(0) { gc_enabled = false; }
+        void _obj_gc_mark() override {}
+    };
+
+    PyObject* const PY_NULL = new PySignalObject();
+    PyObject* const PY_OP_CALL = new PySignalObject();
+    PyObject* const PY_OP_YIELD = new PySignalObject();
 }   // namespace pkpy

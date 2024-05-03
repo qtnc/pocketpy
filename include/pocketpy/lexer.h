@@ -42,6 +42,10 @@ constexpr TokenIndex TK(const char token[]) {
     return 255;
 }
 
+inline constexpr bool is_raw_string_used(TokenIndex t){
+    return t == TK("@id") || t == TK("@long");
+}
+
 #define TK_STR(t) kTokens[t]
 const std::map<std::string_view, TokenIndex> kTokenKwMap = [](){
     std::map<std::string_view, TokenIndex> map;
@@ -59,14 +63,6 @@ struct Token{
 
   Str str() const { return Str(start, length);}
   std::string_view sv() const { return std::string_view(start, length);}
-
-  // Str info() const {
-  //   SStream ss;
-  //   ss << line << ": " << TK_STR(type) << " '" << (
-  //       sv()=="\n" ? "\\n" : sv()
-  //   ) << "'";
-  //   return ss.str();
-  // }
 };
 
 // https://docs.python.org/3/reference/expressions.html#operator-precedence
@@ -143,6 +139,6 @@ enum class IntParsingResult{
     Overflow,
 };
 
-IntParsingResult parse_int(std::string_view text, i64* out, int base);
+IntParsingResult parse_uint(std::string_view text, i64* out, int base);
 
 } // namespace pkpy

@@ -36,7 +36,7 @@ def remove_copied_include(text):
 			key = key[9:]
 		if key in ["user_config.h", "cJSONw.hpp"]:
 			return m.group(0)
-		if key == "opcodes.h":
+		if "opcodes.h" in key:
 			return OPCODES_TEXT
 		assert key in copied, f"include {key} not found"
 		return ""
@@ -64,7 +64,7 @@ for seq in pipeline:
 with open("amalgamated/pocketpy.h", "wt", encoding='utf-8', newline='\n') as f:
 	final_text = \
 r'''/*
- *  Copyright (c) 2023 blueloveTH
+ *  Copyright (c) 2024 blueloveTH
  *  Distributed Under The MIT License
  *  https://github.com/pocketpy/pocketpy
  */

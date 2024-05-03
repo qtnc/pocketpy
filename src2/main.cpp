@@ -94,7 +94,11 @@ regpt(vm);
         std::string src((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         file.close();
 
+        pkpy_set_main_argv(vm, argc, argv);
+
+//        bool ok = pkpy_exec_2(vm, src.c_str(), filepath.filename().string().c_str(), 0, NULL);
         bool ok = pkpy_exec_2(vm, src.c_str(), argv[1], 0, NULL);
+
         if(!ok) pkpy_clear_error(vm, NULL);
         pkpy_delete_vm(vm);
         return ok ? 0 : 1;
