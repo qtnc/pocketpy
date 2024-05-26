@@ -32,7 +32,7 @@ return *this;
 int getX () { return x; }
 void setX (int i) { x=i; }
 
-PY_REG(Point, builtins, Point) {
+PY_REG(Point) {
 binder
 .bindValue("half", 0.5)
 .bindCtor<Point, double, double>("__new__ (cls, x=0, y=0)")
@@ -45,7 +45,7 @@ binder
 .bind("print(self,s)", &print)
 .op_repr([](VM* vm, PyObject* self){ 
 Point& pt = CAST(Point&, self);
-return VAR(pt.repr());
+return pkpy::Str(pt.repr());
 });
 ;
 }
@@ -60,7 +60,7 @@ return p && p->length()>0;
 
 void regpt (void* pvm) {
 VM* vm = (VM*)pvm;
-Point::register_class(vm, vm->builtins);
+vm->register_user_class<Point>(vm->builtins, "Point");
 
 PyObject* dummy = py_create_dummy(vm);
 

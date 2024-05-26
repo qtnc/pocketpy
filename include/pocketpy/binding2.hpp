@@ -10,7 +10,7 @@ template <class T, class... A>
 struct CtorBinder { 
 template<std::size_t... I>
 static PyObject* call (VM* vm,  ArgsView args, std::index_sequence<I...> seq) {
-return vm->heap.gcnew<T>(T::_type(vm), py_cast<typename std::tuple_element<I, std::tuple<A...>>::type>(vm, args[I+1])... );
+return vm->heap.gcnew<T>(vm->_tp_user<T>(), py_cast<typename std::tuple_element<I, std::tuple<A...>>::type>(vm, args[I+1])... );
 }
 static inline void bind (VM* vm, PyObject* type, const char* name) {
 vm->bind(type, name, [](VM* vm, ArgsView args){
@@ -211,7 +211,7 @@ TP(Tuple, tp_tuple)
 TP(Bytes, tp_bytes)
 TP(Slice, tp_slice)
 #undef TP
-else return  is_type(obj, Tp::_type(vm));
+else return  is_type(obj, vm->_tp_user<Tp>());
 }
 
 template<class T>
@@ -239,8 +239,7 @@ return vm->heap.gcnew<T>(T::_type(vm), std::forward<A>(args)...);
 
 } // namespace pkpy
 
-#define PY_REG(CPPNAME, MODNAME, PYNAME) \
-PY_CLASS(CPPNAME, MODNAME, PYNAME) \
+#define PY_REG(CPPNAME) \
     static inline void _register (pkpy::VM* vm, pkpy::PyObject* mod, pkpy::PyObject* type) { _register(Binder<CPPNAME>(vm, mod, type)); } \
     static void _register (Binder<CPPNAME> binder)
 
