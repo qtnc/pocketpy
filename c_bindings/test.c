@@ -7,14 +7,9 @@
 void check_impl(pkpy_vm* vm, bool result, int lineno) {
     if (!result) {
         printf("ERROR: failed where it should have succeed at line %i\n", lineno);
-        char* message;
-        if (!pkpy_clear_error(vm, &message)) {
+        if (!pkpy_clear_error(vm, NULL)) {
             printf("clear error reported everything was fine\n");
-            exit(1);
         }
-
-        printf("%s\n", message);
-        free(message);
         exit(1);
     }
 }
@@ -377,7 +372,7 @@ int main(int argc, char** argv) {
     pkpy_clear_error(vm, NULL);
 
     //this should be catchable
-    check(pkpy_exec(vm, "try : test_error_propagate(); except NameError : pass"));
+    check(pkpy_exec(vm, "try :\n  test_error_propagate()\nexcept NameError : pass"));
     error(pkpy_error(vm, "Exception", pkpy_string("test direct error mechanism")));
 
     //more complicated error handling

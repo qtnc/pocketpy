@@ -38,4 +38,27 @@ def abc():
     exec('a=1', g.__dict__)
     return g.a
 
-assert abc() == 1
+res = abc()
+assert (res==1), res
+
+
+# test locals and globals
+globals = {'a': 1}
+locals = {'a': 1}
+
+exec('a=2', globals, locals)
+assert locals == {'a': 2}
+assert globals == {'a': 1}
+
+exec('a=2', globals)
+assert globals == {'a': 2}
+
+globals = {'a': 2}
+locals = {'b': 3}
+assert eval('a*b', globals, locals) == 6
+
+try:
+    exec('a*b*c', globals, locals)
+    exit(1)
+except NameError:
+    pass

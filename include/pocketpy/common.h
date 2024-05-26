@@ -21,6 +21,9 @@
 #include <initializer_list>
 
 #define PK_VERSION				"1.5.0"
+#define PK_VERSION_MAJOR            1
+#define PK_VERSION_MINOR            5
+#define PK_VERSION_PATCH            0
 
 #include "config.h"
 #include "export.h"
@@ -97,9 +100,9 @@ struct NoReturn { };
 struct Discarded { };
 
 struct Type {
-	int index;
+	int16_t index;
 	constexpr Type(): index(-1) {}
-	constexpr Type(int index): index(index) {}
+	explicit constexpr Type(int index): index(index) {}
 	bool operator==(Type other) const { return this->index == other.index; }
 	bool operator!=(Type other) const { return this->index != other.index; }
 	operator int() const { return this->index; }
@@ -108,6 +111,8 @@ struct Type {
 #define PK_LAMBDA(x) ([](VM* vm, ArgsView args) { return x; })
 #define PK_VAR_LAMBDA(x) ([](VM* vm, ArgsView args) { return VAR(x); })
 #define PK_ACTION(x) ([](VM* vm, ArgsView args) { x; return vm->None; })
+
+#define PK_REGION(name)	1
 
 #ifdef POCKETPY_H
 #define PK_FATAL_ERROR() throw std::runtime_error( "L" + std::to_string(__LINE__) + " FATAL_ERROR()!");
@@ -124,13 +129,15 @@ struct Type {
 #endif
 
 struct PyObject;
+using PyVar = PyObject *;
 #define PK_BITS(p) (reinterpret_cast<i64>(p))
 
-// is_pod<> for c++17 and c++20
+// is_pod_v<> for c++17 and c++20
 template<typename T>
-struct is_pod {
-	static constexpr bool value = std::is_trivially_copyable_v<T> && std::is_standard_layout_v<T>;
-};
+inline constexpr bool is_pod_v = std::is_trivially_copyable_v<T> && std::is_standard_layout_v<T>;
+
+template<typename T>
+inline constexpr bool is_sso_v = is_pod_v<T> && sizeof(T) <= sizeof(void*);
 
 #define PK_ALWAYS_PASS_BY_POINTER(T) \
 	T(const T&) = delete; \

@@ -5,32 +5,8 @@ from __builtins import next as __builtins_next
 #    s = sep.join([str(i) for i in args])
 #    _sys.stdout.write(s + end)
 
-def reduce(func, *args, default=None):
-    if len(args) == 0:
-        raise TypeError('expected 1 arguments, got 0')
-    if len(args) == 1:
-        args = args[0]
-    args = iter(args)
-    res = __builtins_next(args) if default is None else default
-    if res is StopIteration:
-        raise ValueError('args is an empty sequence')
-    while True:
-        i = __builtins_next(args)
-        if i is StopIteration:
-            break
-        res = func(i, res)
-    return res
 
-def min(*args, key=None, default=None):
-    if key is None: key = lambda x: x
-    return reduce(lambda a, b: a if key(a)<key(b) else b, *args, default=default)
-
-def max(*args, key=None, default=None):
-    if key is None: key = lambda x: x
-    return reduce(lambda a, b: a if key(a)>key(b) else b, *args, default=default)
-
-def all(iterable, func=None):
-    if func is None: func = lambda x: x
+def all(iterable):
     for i in iterable:
         if not func(i):
             return False

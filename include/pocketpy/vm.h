@@ -20,14 +20,14 @@ namespace pkpy{
 #define TOP()             (s_data.top())
 #define SECOND()          (s_data.second())
 #define THIRD()           (s_data.third())
-#define PEEK(n)           (s_data.peek(n))
 #define STACK_SHRINK(n)   (s_data.shrink(n))
 #define PUSH(v)           (s_data.push(v))
 #define POP()             (s_data.pop())
 #define POPX()            (s_data.popx())
 #define STACK_VIEW(n)     (s_data.view(n))
 
-typedef PyObject* (*BinaryFuncC)(VM*, PyObject*, PyObject*);
+typedef PyVar (*BinaryFuncC)(VM*, PyVar, PyVar);
+typedef void (*RegisterFunc)(VM*, PyVar, PyVar);
 
 #if PK_ENABLE_PROFILER
 struct NextBreakpoint{
@@ -42,24 +42,23 @@ struct NextBreakpoint{
 #endif
 
 struct PyTypeInfo{
-    PyObject* obj;      // never be garbage collected
+    PyVar obj;      // never be garbage collected
     Type base;
-    PyObject* mod;      // never be garbage collected
+    PyVar mod;      // never be garbage collected
     StrName name;
     bool subclass_enabled;
 
-    pod_vector<StrName> annotated_fields = {};
+    std::vector<StrName> annotated_fields = {};
 
-    // cached special methods
     // unary operators
-    PyObject* (*m__repr__)(VM* vm, PyObject*) = nullptr;
-    PyObject* (*m__str__)(VM* vm, PyObject*) = nullptr;
-    i64 (*m__hash__)(VM* vm, PyObject*) = nullptr;
-    i64 (*m__len__)(VM* vm, PyObject*) = nullptr;
-    PyObject* (*m__iter__)(VM* vm, PyObject*) = nullptr;
-    unsigned (*m__next__)(VM* vm, PyObject*) = nullptr;
-    PyObject* (*m__neg__)(VM* vm, PyObject*) = nullptr;
-    PyObject* (*m__invert__)(VM* vm, PyObject*) = nullptr;
+    Str (*m__repr__)(VM* vm, PyVar) = nullptr;
+    Str (*m__str__)(VM* vm, PyVar) = nullptr;
+    i64 (*m__hash__)(VM* vm, PyVar) = nullptr;
+    i64 (*m__len__)(VM* vm, PyVar) = nullptr;
+    PyVar (*m__iter__)(VM* vm, PyVar) = nullptr;
+    unsigned (*m__next__)(VM* vm, PyVar) = nullptr;
+    PyVar (*m__neg__)(VM* vm, PyVar) = nullptr;
+    PyVar (*m__invert__)(VM* vm, PyVar) = nullptr;
 
     BinaryFuncC m__eq__ = nullptr;
     BinaryFuncC m__lt__ = nullptr;
@@ -85,26 +84,50 @@ struct PyTypeInfo{
     BinaryFuncC m__xor__ = nullptr;
 
     // indexer
-    PyObject* (*m__getitem__)(VM* vm, PyObject*, PyObject*) = nullptr;
-    void (*m__setitem__)(VM* vm, PyObject*, PyObject*, PyObject*) = nullptr;
-    void (*m__delitem__)(VM* vm, PyObject*, PyObject*) = nullptr;
+    PyVar (*m__getitem__)(VM* vm, PyVar, PyVar) = nullptr;
+    void (*m__setitem__)(VM* vm, PyVar, PyVar, PyVar) = nullptr;
+    void (*m__delitem__)(VM* vm, PyVar, PyVar) = nullptr;
 
     // attributes
-    void (*m__setattr__)(VM* vm, PyObject*, StrName, PyObject*) = nullptr;
-    PyObject* (*m__getattr__)(VM* vm, PyObject*, StrName) = nullptr;
-    bool (*m__delattr__)(VM* vm, PyObject*, StrName) = nullptr;
+    void (*m__setattr__)(VM* vm, PyVar, StrName, PyVar) = nullptr;
+    PyVar (*m__getattr__)(VM* vm, PyVar, StrName) = nullptr;
+    bool (*m__delattr__)(VM* vm, PyVar, StrName) = nullptr;
 
     // backdoors
     void (*on_end_subclass)(VM* vm, PyTypeInfo*) = nullptr;
 };
 
-typedef void(*PrintFunc)(const char*, int);
-typedef unsigned char* (*ImportHandlerFunc)(const char*, int, int*);
+struct ImportContext{
+    PK_ALWAYS_PASS_BY_POINTER(ImportContext)
+
+    std::vector<Str> pending;
+    std::vector<bool> pending_is_init;   // a.k.a __init__.py
+
+    ImportContext() {}
+
+    struct Temp{
+        PK_ALWAYS_PASS_BY_POINTER(Temp)
+
+        ImportContext* ctx;
+        Temp(ImportContext* ctx, Str name, bool is_init) : ctx(ctx){
+            ctx->pending.push_back(name);
+            ctx->pending_is_init.push_back(is_init);
+        }
+        ~Temp(){
+            ctx->pending.pop_back();
+            ctx->pending_is_init.pop_back();
+        }
+    };
+
+    Temp scope(Str name, bool is_init){
+        return {this, name, is_init};
+    }
+};
 
 class VM {
     PK_ALWAYS_PASS_BY_POINTER(VM)
     
-    VM* vm;     // self reference for simplify code
+    VM* vm;     // self reference to simplify code
 public:
     ManagedHeap heap;
     ValueStack s_data;
@@ -115,151 +138,154 @@ public:
     std::map<StrName, Str> _lazy_modules;              // lazy loaded modules
 
     struct{
-        PyObject* error;
+        PyVar error;
         stack_no_copy<ArgsView> s_view;
-    } _c;
+    } __c;
 
-    PyObject* None;
-    PyObject* True;
-    PyObject* False;
-    PyObject* NotImplemented;   // unused
-    PyObject* Ellipsis;
-    PyObject* builtins;         // builtins module
-    PyObject* StopIteration;
-    PyObject* _main;            // __main__ module
-
-    PyObject* _last_exception;  // last exception
-    PyObject* _curr_class;      // current class being defined
-
-    // this is for repr() recursion detection (no need to mark)
-    std::set<PyObject*> _repr_recursion_set;
-
-    // cached code objects for FSTRING_EVAL
-    std::map<std::string_view, CodeObject_> _cached_codes;
+    PyVar None, True, False, NotImplemented;
+    PyVar StopIteration, Ellipsis;
+    PyVar builtins, _main;
 
     // typeid -> Type
     std::map<const std::type_index, Type> _cxx_typeid_map;
+    // this is for repr() recursion detection (no need to mark)
+    std::set<PyVar> _repr_recursion_set;
 
-    void (*_ceval_on_step)(VM*, Frame*, Bytecode bc) = nullptr;
+    ImportContext __import_context;
+    PyVar __last_exception;
+    PyVar __curr_class; 
+    PyVar __cached_object_new;
+    std::map<std::string_view, CodeObject_> __cached_codes;
+    std::map<std::string_view, PyVar> __cached_op_funcs;
+    FuncDecl_ __dynamic_func_decl;
 
 #if PK_ENABLE_PROFILER
     LineProfiler* _profiler = nullptr;
     NextBreakpoint _next_breakpoint;
 #endif
 
-    PrintFunc _stdout;
-    PrintFunc _stderr;
-    ImportHandlerFunc _import_handler;
-
-    // for quick access
-    static constexpr Type tp_object=0, tp_type=1;
-    static constexpr Type tp_int=kTpIntIndex, tp_float=kTpFloatIndex, tp_bool=4, tp_str=5;
-    static constexpr Type tp_list=6, tp_tuple=7;
-    static constexpr Type tp_slice=8, tp_range=9, tp_module=10;
-    static constexpr Type tp_function=11, tp_native_func=12, tp_bound_method=13;
+    void (*_ceval_on_step)(VM*, Frame*, Bytecode bc);
+    void(*_stdout)(const char*, int);
+    void(*_stderr)(const char*, int);
+    unsigned char* (*_import_handler)(const char*, int*);
+    // function<void(const char*, int)> _stdout;
+    // function<void(const char*, int)> _stderr;
+    // function<unsigned char*(const char*, int*)> _import_handler;
     
-    static constexpr Type tp_super=14, tp_exception=15, tp_bytes=16, tp_mappingproxy=17;
-    static constexpr Type tp_dict=18, tp_property=19, tp_star_wrapper=20;
-    static constexpr Type tp_staticmethod=21, tp_classmethod=22;
-
-    PyObject* cached_object__new__;
+    // for quick access
+    static constexpr Type tp_object=Type(0), tp_type=Type(1);
+    static constexpr Type tp_int=Type(kTpIntIndex), tp_float=Type(kTpFloatIndex), tp_bool=Type(4), tp_str=Type(5);
+    static constexpr Type tp_list=Type(6), tp_tuple=Type(7);
+    static constexpr Type tp_slice=Type(8), tp_range=Type(9), tp_module=Type(10);
+    static constexpr Type tp_function=Type(11), tp_native_func=Type(12), tp_bound_method=Type(13);
+    static constexpr Type tp_super=Type(14), tp_exception=Type(15), tp_bytes=Type(16), tp_mappingproxy=Type(17);
+    static constexpr Type tp_dict=Type(18), tp_property=Type(19), tp_star_wrapper=Type(20);
+    static constexpr Type tp_staticmethod=Type(21), tp_classmethod=Type(22);
 
     const bool enable_os;
-
     VM(bool enable_os=true);
 
-    void set_main_argv(int argc, char** argv);
-    void _breakpoint();
+#if PK_REGION("Python Equivalents")
+    Str py_str(PyVar obj);                              // x -> str(x)
+    Str py_repr(PyVar obj);                             // x -> repr(x)
+    Str py_json(PyVar obj);                             // x -> json.dumps(x)
 
-    Frame* top_frame(){
-        return &callstack.top();
+    PyVar py_iter(PyVar obj);                           // x -> iter(x)
+    PyVar py_next(PyVar);                               // x -> next(x)
+    PyVar _py_next(const PyTypeInfo*, PyVar);           // x -> next(x) with type info cache
+    PyVar py_import(Str path, bool throw_err=true);     // x -> __import__(x)
+    PyVar py_negate(PyVar obj);                         // x -> -x
+
+    List py_list(PyVar);                                // x -> list(x)
+    bool py_callable(PyVar obj);                        // x -> callable(x)
+    bool py_bool(PyVar obj);                            // x -> bool(x)
+    i64 py_hash(PyVar obj);                             // x -> hash(x)
+
+    bool py_eq(PyVar lhs, PyVar rhs);                   // (lhs, rhs) -> lhs == rhs
+    bool py_lt(PyVar lhs, PyVar rhs);                   // (lhs, rhs) -> lhs < rhs
+    bool py_le(PyVar lhs, PyVar rhs);                   // (lhs, rhs) -> lhs <= rhs
+    bool py_gt(PyVar lhs, PyVar rhs);                   // (lhs, rhs) -> lhs > rhs
+    bool py_ge(PyVar lhs, PyVar rhs);                   // (lhs, rhs) -> lhs >= rhs
+    bool py_ne(PyVar lhs, PyVar rhs){                   // (lhs, rhs) -> lhs != rhs
+        return !py_eq(lhs, rhs);
     }
 
-    void _pop_frame(){
-        s_data.reset(callstack.top()._sp_base);
-        callstack.pop();
+    PyVar py_op(std::string_view name);                 // (name) -> operator.name
 
-#if PK_ENABLE_PROFILER
-        if(!_next_breakpoint.empty() && callstack.size()<_next_breakpoint.callstack_size){
-            _next_breakpoint = NextBreakpoint();
-        }
+    void py_exec(std::string_view, PyVar, PyVar);       // exec(source, globals, locals)
+    PyVar py_eval(std::string_view, PyVar, PyVar);      // eval(source, globals, locals)
 #endif
-    }
 
-    PyObject* py_str(PyObject* obj);
-    PyObject* py_repr(PyObject* obj);
-    PyObject* py_json(PyObject* obj);
-    PyObject* py_iter(PyObject* obj);
+#if PK_REGION("Utility Methods")
+    ArgsView cast_array_view(PyVar obj);
+    void set_main_argv(int argc, char** argv);
+    i64 normalized_index(i64 index, int size);
+    Str disassemble(CodeObject_ co);
+    void parse_int_slice(const Slice& s, int length, int& start, int& stop, int& step);
+#endif
 
-    std::pair<PyObject**, int> _cast_array(PyObject* obj);
+#if PK_REGION("Name Lookup Methods")
+    PyVar find_name_in_mro(Type cls, StrName name);
+    PyVar get_unbound_method(PyVar obj, StrName name, PyVar* self, bool throw_err=true, bool fallback=false);
+    PyVar getattr(PyVar obj, StrName name, bool throw_err=true);
+    void delattr(PyVar obj, StrName name);
+    void setattr(PyVar obj, StrName name, PyVar value);
+#endif
 
-    PyObject* find_name_in_mro(Type cls, StrName name);
-    bool isinstance(PyObject* obj, Type base);
-    bool issubclass(Type cls, Type base);
-
+#if PK_REGION("Source Execution Methods")
     CodeObject_ compile(std::string_view source, const Str& filename, CompileMode mode, bool unknown_global_scope=false);
     Str precompile(std::string_view source, const Str& filename, CompileMode mode);
-
-    PyObject* exec(std::string_view source, Str filename, CompileMode mode, PyObject* _module=nullptr);
-    PyObject* exec(std::string_view source);
-    PyObject* eval(std::string_view source);
+    PyVar exec(std::string_view source, Str filename, CompileMode mode, PyVar _module=nullptr);
+    PyVar exec(std::string_view source);
+    PyVar eval(std::string_view source);
 
     template<typename ...Args>
-    PyObject* _exec(Args&&... args){
+    PyVar _exec(Args&&... args){
         callstack.emplace(s_data._sp, std::forward<Args>(args)...);
-        return _run_top_frame();
+        return __run_top_frame();
     }
+#endif
 
-    void _push_varargs(){}
-    void _push_varargs(PyObject* _0){ PUSH(_0); }
-    void _push_varargs(PyObject* _0, PyObject* _1){ PUSH(_0); PUSH(_1); }
-    void _push_varargs(PyObject* _0, PyObject* _1, PyObject* _2){ PUSH(_0); PUSH(_1); PUSH(_2); }
-    void _push_varargs(PyObject* _0, PyObject* _1, PyObject* _2, PyObject* _3){ PUSH(_0); PUSH(_1); PUSH(_2); PUSH(_3); }
-
-    virtual void stdout_write(const Str& s){
-        _stdout(s.data, s.size);
-    }
-
-    virtual void stderr_write(const Str& s){
-        _stderr(s.data, s.size);
-    }
+#if PK_REGION("Invocation Methods")
+    PyVar vectorcall(int ARGC, int KWARGC=0, bool op_call=false);
 
     template<typename... Args>
-    PyObject* call(PyObject* callable, Args&&... args){
-        PUSH(callable);
-        PUSH(PY_NULL);
-        _push_varargs(args...);
+    PyVar call(PyVar callable, Args&&... args){
+        PUSH(callable); PUSH(PY_NULL);
+        __push_varargs(args...);
         return vectorcall(sizeof...(args));
     }
 
     template<typename... Args>
-    PyObject* call_method(PyObject* self, PyObject* callable, Args&&... args){
-        PUSH(callable);
-        PUSH(self);
-        _push_varargs(args...);
+    PyVar call_method(PyVar self, PyVar callable, Args&&... args){
+        PUSH(callable); PUSH(self);
+        __push_varargs(args...);
         return vectorcall(sizeof...(args));
     }
 
     template<typename... Args>
-    PyObject* call_method(PyObject* self, StrName name, Args&&... args){
-        PyObject* callable = get_unbound_method(self, name, &self);
+    PyVar call_method(PyVar self, StrName name, Args&&... args){
+        PyVar callable = get_unbound_method(self, name, &self);
         return call_method(self, callable, args...);
     }
+#endif
 
-    PyObject* new_type_object(PyObject* mod, StrName name, Type base, bool subclass_enabled=true);
-    Type _new_type_object(StrName name, Type base=0, bool subclass_enabled=false);
-    const PyTypeInfo* _inst_type_info(PyObject* obj);
+#if PK_REGION("Logging Methods")
+    virtual void stdout_write(const Str& s){ _stdout(s.data, s.size); }
+    virtual void stderr_write(const Str& s){ _stderr(s.data, s.size); }
+#endif
 
-    void bind__repr__(Type type, PyObject* (*f)(VM*, PyObject*));
-    void bind__str__(Type type, PyObject* (*f)(VM*, PyObject*));
-    void bind__iter__(Type type, PyObject* (*f)(VM*, PyObject*));
-    void bind__next__(Type type, unsigned (*f)(VM*, PyObject*));
-    [[deprecated]] void bind__next__(Type type, PyObject* (*f)(VM*, PyObject*));
-    void bind__neg__(Type type, PyObject* (*f)(VM*, PyObject*));
-    void bind__invert__(Type type, PyObject* (*f)(VM*, PyObject*));
-    void bind__hash__(Type type, i64 (*f)(VM* vm, PyObject*));
-    void bind__len__(Type type, i64 (*f)(VM* vm, PyObject*));
+#if PK_REGION("Magic Bindings")
+    void bind__repr__(Type type, Str (*f)(VM*, PyVar));
+    void bind__str__(Type type, Str (*f)(VM*, PyVar));
+    void bind__iter__(Type type, PyVar (*f)(VM*, PyVar));
 
+    void bind__next__(Type type, unsigned (*f)(VM*, PyVar));
+    [[deprecated]] void bind__next__(Type type, PyVar (*f)(VM*, PyVar));
+    void bind__neg__(Type type, PyVar (*f)(VM*, PyVar));
+    void bind__invert__(Type type, PyVar (*f)(VM*, PyVar));
+    void bind__hash__(Type type, i64 (*f)(VM* vm, PyVar));
+    void bind__len__(Type type, i64 (*f)(VM* vm, PyVar));
 
     void bind__eq__(Type type, BinaryFuncC f);
     void bind__lt__(Type type, BinaryFuncC f);
@@ -283,172 +309,88 @@ public:
     void bind__or__(Type type, BinaryFuncC f);
     void bind__xor__(Type type, BinaryFuncC f);
 
-    void bind__getitem__(Type type, PyObject* (*f)(VM*, PyObject*, PyObject*));
-    void bind__setitem__(Type type, void (*f)(VM*, PyObject*, PyObject*, PyObject*));
-    void bind__delitem__(Type type, void (*f)(VM*, PyObject*, PyObject*));
-
-    bool py_eq(PyObject* lhs, PyObject* rhs);
-    // new in v1.2.9
-    bool py_lt(PyObject* lhs, PyObject* rhs);
-    bool py_le(PyObject* lhs, PyObject* rhs);
-    bool py_gt(PyObject* lhs, PyObject* rhs);
-    bool py_ge(PyObject* lhs, PyObject* rhs);
-    bool py_ne(PyObject* lhs, PyObject* rhs) { return !py_eq(lhs, rhs); }
-
-    template<int ARGC, typename __T>
-    PyObject* bind_constructor(__T&& type, NativeFuncC fn) {
-        static_assert(ARGC==-1 || ARGC>=1);
-        return bind_func<ARGC>(std::forward<__T>(type), __new__, fn);
-    }
-
-    template<typename T, typename __T>
-    PyObject* bind_notimplemented_constructor(__T&& type) {
-        return bind_func<-1>(std::forward<__T>(type), __new__, [](VM* vm, ArgsView args){
-            vm->NotImplementedError();
-            return vm->None;
-        });
-    }
-
-    i64 normalized_index(i64 index, int size);
-    PyObject* py_next(PyObject*);
-    PyObject* _py_next(const PyTypeInfo*, PyObject*);
-    PyObject* _pack_next_retval(unsigned);
-    bool py_callable(PyObject* obj);
-    
-    /***** Error Reporter *****/
-    void _raise(bool re_raise=false);
-
-    void _builtin_error(StrName type);
-    void _builtin_error(StrName type, PyObject* arg);
-    void _builtin_error(StrName type, const Str& msg);
-
-    void StackOverflowError() { _builtin_error("StackOverflowError"); }
-    void IOError(const Str& msg) { _builtin_error("IOError", msg); }
-    void NotImplementedError(){ _builtin_error("NotImplementedError"); }
-    void TypeError(const Str& msg){ _builtin_error("TypeError", msg); }
-    void IndexError(const Str& msg){ _builtin_error("IndexError", msg); }
-    void ValueError(const Str& msg){ _builtin_error("ValueError", msg); }
-    void RuntimeError(const Str& msg){ _builtin_error("RuntimeError", msg); }
-    void ZeroDivisionError(const Str& msg){ _builtin_error("ZeroDivisionError", msg); }
-    void ZeroDivisionError(){ _builtin_error("ZeroDivisionError", "division by zero"); }
-    void NameError(StrName name){ _builtin_error("NameError", _S("name ", name.escape() + " is not defined")); }
-    void UnboundLocalError(StrName name){ _builtin_error("UnboundLocalError", _S("local variable ", name.escape() + " referenced before assignment")); }
-    void KeyError(PyObject* obj){ _builtin_error("KeyError", obj); }
-    void ImportError(const Str& msg){ _builtin_error("ImportError", msg); }
-
-    void BinaryOptError(const char* op, PyObject* _0, PyObject* _1);
-    void AttributeError(PyObject* obj, StrName name);
-    void AttributeError(const Str& msg){ _builtin_error("AttributeError", msg); }
-
-    void check_type(PyObject* obj, Type type){
-        if(is_type(obj, type)) return;
-        TypeError("expected " + _type_name(vm, type).escape() + ", got " + _type_name(vm, _tp(obj)).escape());
-    }
-
-    void check_compatible_type(PyObject* obj, Type type){
-        if(isinstance(obj, type)) return;
-        TypeError("expected " + _type_name(vm, type).escape() + ", got " + _type_name(vm, _tp(obj)).escape());
-    }
-
-    PyObject* _t(Type t){
-        return _all_types[t.index].obj;
-    }
-
-    Type _tp(PyObject* obj){
-        if(!is_tagged(obj)) return obj->type;
-        return tp_int;
-    }
-
-    PyObject* _t(PyObject* obj){
-        return _all_types[_tp(obj).index].obj;
-    }
-
-    struct ImportContext{
-        std::vector<Str> pending;
-        pod_vector<bool> pending_is_init;   // a.k.a __init__.py
-
-        struct Temp{
-            PK_ALWAYS_PASS_BY_POINTER(Temp)
-
-            ImportContext* ctx;
-            Temp(ImportContext* ctx, Str name, bool is_init) : ctx(ctx){
-                ctx->pending.push_back(name);
-                ctx->pending_is_init.push_back(is_init);
-            }
-            ~Temp(){
-                ctx->pending.pop_back();
-                ctx->pending_is_init.pop_back();
-            }
-        };
-
-        Temp scope(Str name, bool is_init){
-            return {this, name, is_init};
-        }
-    };
-
-    ImportContext _import_context;
-    PyObject* py_import(Str path, bool throw_err=true);
-    virtual ~VM();
-
-#if PK_DEBUG_CEVAL_STEP
-    void _log_s_data(const char* title = nullptr);
+    void bind__getitem__(Type type, PyVar (*f)(VM*, PyVar, PyVar));
+    void bind__setitem__(Type type, void (*f)(VM*, PyVar, PyVar, PyVar));
+    void bind__delitem__(Type type, void (*f)(VM*, PyVar, PyVar));
 #endif
-    void _unpack_as_list(ArgsView args, List& list);
-    void _unpack_as_dict(ArgsView args, Dict& dict);
-    PyObject* vectorcall(int ARGC, int KWARGC=0, bool op_call=false);
-    PyObject* py_negate(PyObject* obj);
-    bool py_bool(PyObject* obj);
-    i64 py_hash(PyObject* obj);
-    PyObject* py_list(PyObject*);
-    PyObject* new_module(Str name, Str package="");
-    Str disassemble(CodeObject_ co);
-    void init_builtin_types();
-    PyObject* getattr(PyObject* obj, StrName name, bool throw_err=true);
-    void delattr(PyObject* obj, StrName name);
-    PyObject* get_unbound_method(PyObject* obj, StrName name, PyObject** self, bool throw_err=true, bool fallback=false);
-    void parse_int_slice(const Slice& s, int length, int& start, int& stop, int& step);
-    PyObject* _format_string(Str, PyObject*);
-    void setattr(PyObject* obj, StrName name, PyObject* value);
-    template<int ARGC>
-    PyObject* bind_method(Type, StrName, NativeFuncC);
-    template<int ARGC>
-    PyObject* bind_method(PyObject*, StrName, NativeFuncC);
-    template<int ARGC>
-    PyObject* bind_func(PyObject*, StrName, NativeFuncC, UserData userdata={}, BindType bt=BindType::DEFAULT);
-    void _error(PyObject*);
-    PyObject* _run_top_frame();
-    void post_init();
-    PyObject* _py_generator(Frame&& frame, ArgsView buffer);
-    void _op_unpack_sequence(uint16_t arg);
-    void _prepare_py_call(PyObject**, ArgsView, ArgsView, const FuncDecl_&);
-    // new style binding api
-    PyObject* bind(PyObject*, const char*, const char*, NativeFuncC, UserData userdata={}, BindType bt=BindType::DEFAULT);
-    PyObject* bind(PyObject*, const char*, NativeFuncC, UserData userdata={}, BindType bt=BindType::DEFAULT);
-    PyObject* bind_property(PyObject*, const char*, NativeFuncC fget, NativeFuncC fset=nullptr, UserData fgudata ={}, UserData fsudata ={});
+
+#if PK_REGION("General Bindings")
+    PyVar bind_func(PyVar obj, StrName name, int argc, NativeFuncC fn, any userdata={}, BindType bt=BindType::DEFAULT);
+    PyVar bind_func(Type type, StrName name, int argc, NativeFuncC fn, any userdata={}, BindType bt=BindType::DEFAULT){
+        return bind_func(_t(type), name, argc, fn, std::move(userdata), bt);
+    }
+    PyVar bind_property(PyVar, const char*, NativeFuncC fget, NativeFuncC fset=nullptr, any fgetudata = {}, any fsetudata = {});
+    template<typename T, typename F, bool ReadOnly=false>
+    PyVar bind_field(PyVar, const char*, F T::*);
+
+    PyVar bind(PyVar, const char*, NativeFuncC, any userdata={}, BindType bt=BindType::DEFAULT);
+    template<typename Ret, typename... Params>
+    PyVar bind(PyVar, const char*, Ret(*)(Params...), BindType bt=BindType::DEFAULT);
+    template<typename Ret, typename T, typename... Params>
+    PyVar bind(PyVar, const char*, Ret(T::*)(Params...), BindType bt=BindType::DEFAULT);
+
+    PyVar bind(PyVar, const char*, const char*, NativeFuncC, any userdata={}, BindType bt=BindType::DEFAULT);
+    template<typename Ret, typename... Params>
+    PyVar bind(PyVar, const char*, const char*, Ret(*)(Params...), BindType bt=BindType::DEFAULT);
+    template<typename Ret, typename T, typename... Params>
+    PyVar bind(PyVar, const char*, const char*, Ret(T::*)(Params...), BindType bt=BindType::DEFAULT);
+#endif
+
+#if PK_REGION("Error Reporting Methods")
+    void _error(PyVar);
+    void StackOverflowError() { __builtin_error("StackOverflowError"); }
+    void IOError(const Str& msg) { __builtin_error("IOError", msg); }
+    void NotImplementedError(){ __builtin_error("NotImplementedError"); }
+    void TypeError(const Str& msg){ __builtin_error("TypeError", msg); }
+    void TypeError(Type expected, Type actual) { TypeError("expected " + _type_name(vm, expected).escape() + ", got " + _type_name(vm, actual).escape()); }
+    void IndexError(const Str& msg){ __builtin_error("IndexError", msg); }
+    void ValueError(const Str& msg){ __builtin_error("ValueError", msg); }
+    void RuntimeError(const Str& msg){ __builtin_error("RuntimeError", msg); }
+    void ZeroDivisionError(const Str& msg){ __builtin_error("ZeroDivisionError", msg); }
+    void ZeroDivisionError(){ __builtin_error("ZeroDivisionError", "division by zero"); }
+    void NameError(StrName name){ __builtin_error("NameError", _S("name ", name.escape() + " is not defined")); }
+    void UnboundLocalError(StrName name){ __builtin_error("UnboundLocalError", _S("local variable ", name.escape() + " referenced before assignment")); }
+    void KeyError(PyVar obj){ __builtin_error("KeyError", obj); }
+    void ImportError(const Str& msg){ __builtin_error("ImportError", msg); }
+    void AssertionError(const Str& msg){ __builtin_error("AssertionError", msg); }
+    void AssertionError(){ __builtin_error("AssertionError"); }
+    void BinaryOptError(const char* op, PyVar _0, PyVar _1);
+    void AttributeError(PyVar obj, StrName name);
+    void AttributeError(const Str& msg){ __builtin_error("AttributeError", msg); }
+#endif
+
+#if PK_REGION("Type Checking Methods")
+    bool isinstance(PyVar obj, Type base);
+    bool issubclass(Type cls, Type base);
+    void check_type(PyVar obj, Type type){ if(!is_type(obj, type)) TypeError(type, _tp(obj)); }
+    void check_compatible_type(PyVar obj, Type type){ if(!isinstance(obj, type)) TypeError(type, _tp(obj)); }
+
+    Type _tp(PyVar obj){ return is_small_int(obj) ? tp_int : obj->type; }
+    const PyTypeInfo* _tp_info(PyVar obj) { return &_all_types[_tp(obj)]; }
+    const PyTypeInfo* _tp_info(Type type) { return &_all_types[type]; }
+    PyVar _t(PyVar obj){ return _all_types[_tp(obj)].obj; }
+    PyVar _t(Type type){ return _all_types[type].obj; }
+#endif
+
+#if PK_REGION("User Type Registration")
+    PyVar new_module(Str name, Str package="");
+    PyVar new_type_object(PyVar mod, StrName name, Type base, bool subclass_enabled=true);
 
     template<typename T>
-    PyObject* register_user_class(PyObject* mod, StrName name, bool subclass_enabled=false){
-        PyObject* type = new_type_object(mod, name, 0, subclass_enabled);
-        mod->attr().set(name, type);
-        _cxx_typeid_map[typeid(T)] = PK_OBJ_GET(Type, type);
-        T::_register(vm, mod, type);
-        return type;
-    }
+    Type _tp_user(){ return _find_type_in_cxx_typeid_map<T>(); }
+    template<typename T>
+    bool is_user_type(PyVar obj){ return _tp(obj) == _tp_user<T>(); }
+
+    template<typename T>
+    PyVar register_user_class(PyVar, StrName, RegisterFunc, Type base=tp_object, bool subclass_enabled=false);
+    template<typename T>
+    PyVar register_user_class(PyVar, StrName, Type base=tp_object, bool subclass_enabled=false);
 
     template<typename T, typename ...Args>
-    PyObject* new_user_object(Args&&... args){
+    PyVar new_user_object(Args&&... args){
         return heap.gcnew<T>(_tp_user<T>(), std::forward<Args>(args)...);
     }
-
-    template<typename T>
-    Type _tp_user(){
-        return _find_type_in_cxx_typeid_map<T>();
-    }
-
-    template<typename T>
-    bool is_user_type(PyObject* obj){
-        return _tp(obj) == _tp_user<T>();
-    }
+#endif
 
     template<typename T>
     Type _find_type_in_cxx_typeid_map(){
@@ -464,6 +406,36 @@ public:
         }
         return it->second;
     }
+
+    /********** private **********/
+    virtual ~VM();
+
+#if PK_DEBUG_CEVAL_STEP
+    void __log_s_data(const char* title = nullptr);
+#endif
+    PyVar __py_exec_internal(const CodeObject_& code, PyVar globals, PyVar locals);
+    void __breakpoint();
+    PyVar __format_object(PyVar, Str);
+    PyVar __run_top_frame();
+    void __pop_frame();
+    PyVar __py_generator(Frame&& frame, ArgsView buffer);
+    void __op_unpack_sequence(uint16_t arg);
+    void __prepare_py_call(PyVar*, ArgsView, ArgsView, const FuncDecl_&);
+    void __unpack_as_list(ArgsView args, List& list);
+    void __unpack_as_dict(ArgsView args, Dict& dict);
+    void __raise_exc(bool re_raise=false);
+    void __init_builtin_types();
+    void __post_init_builtin_types();
+    void __builtin_error(StrName type);
+    void __builtin_error(StrName type, PyVar arg);
+    void __builtin_error(StrName type, const Str& msg);
+    void __push_varargs(){}
+    void __push_varargs(PyVar _0){ PUSH(_0); }
+    void __push_varargs(PyVar _0, PyVar _1){ PUSH(_0); PUSH(_1); }
+    void __push_varargs(PyVar _0, PyVar _1, PyVar _2){ PUSH(_0); PUSH(_1); PUSH(_2); }
+    void __push_varargs(PyVar _0, PyVar _1, PyVar _2, PyVar _3){ PUSH(_0); PUSH(_1); PUSH(_2); PUSH(_3); }
+    PyVar __pack_next_retval(unsigned);
+    PyVar __minmax_reduce(bool (VM::*op)(PyVar, PyVar), PyVar args, PyVar key);
 };
 
 
@@ -473,7 +445,7 @@ inline constexpr bool is_immutable_v = is_integral_v<T> || is_floating_point_v<T
     || std::is_same_v<T, Range> || std::is_same_v<T, Slice>
     || std::is_pointer_v<T> || std::is_enum_v<T>;
 
-template<typename T> constexpr Type _find_type_in_const_cxx_typeid_map(){ return -1; }
+template<typename T> constexpr Type _find_type_in_const_cxx_typeid_map(){ return Type(-1); }
 template<> constexpr Type _find_type_in_const_cxx_typeid_map<Str>(){ return VM::tp_str; }
 template<> constexpr Type _find_type_in_const_cxx_typeid_map<List>(){ return VM::tp_list; }
 template<> constexpr Type _find_type_in_const_cxx_typeid_map<Tuple>(){ return VM::tp_tuple; }
@@ -492,10 +464,10 @@ template<> constexpr Type _find_type_in_const_cxx_typeid_map<StaticMethod>(){ re
 template<> constexpr Type _find_type_in_const_cxx_typeid_map<ClassMethod>(){ return VM::tp_classmethod; }
 
 template<typename __T>
-PyObject* py_var(VM* vm, __T&& value){
+PyVar py_var(VM* vm, __T&& value){
     using T = std::decay_t<__T>;
 
-    static_assert(!std::is_same_v<T, PyObject*>, "py_var(VM*, PyObject*) is not allowed");
+    static_assert(!std::is_same_v<T, PyVar>, "py_var(VM*, PyVar) is not allowed");
 
     if constexpr(std::is_same_v<T, const char*> || std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>){
         // str (shortcuts)
@@ -511,7 +483,7 @@ PyObject* py_var(VM* vm, __T&& value){
         i64 val = static_cast<i64>(std::forward<__T>(value));
         if(val >= Number::kMinSmallInt && val <= Number::kMaxSmallInt){
             val = (val << 2) | 0b10;
-            return reinterpret_cast<PyObject*>(val);
+            return reinterpret_cast<PyVar>(val);
         }else{
             return vm->heap.gcnew<i64>(vm->tp_int, val);
         }
@@ -532,7 +504,7 @@ PyObject* py_var(VM* vm, __T&& value){
 }
 
 template<typename __T, bool with_check>
-__T _py_cast__internal(VM* vm, PyObject* obj) {
+__T _py_cast__internal(VM* vm, PyVar obj) {
     static_assert(!std::is_rvalue_reference_v<__T>, "rvalue reference is not allowed");
 
     using T = std::decay_t<__T>;
@@ -597,35 +569,32 @@ __T _py_cast__internal(VM* vm, PyObject* obj) {
 }
 
 template<typename __T>
-__T  py_cast(VM* vm, PyObject* obj) { return _py_cast__internal<__T, true>(vm, obj); }
+__T  py_cast(VM* vm, PyVar obj) { return _py_cast__internal<__T, true>(vm, obj); }
 template<typename __T>
-__T _py_cast(VM* vm, PyObject* obj) { return _py_cast__internal<__T, false>(vm, obj); }
+__T _py_cast(VM* vm, PyVar obj) { return _py_cast__internal<__T, false>(vm, obj); }
 
-
-template<int ARGC>
-PyObject* VM::bind_method(Type type, StrName name, NativeFuncC fn) {
-    PyObject* nf = VAR(NativeFunc(fn, ARGC, true));
-    _t(type)->attr().set(name, nf);
-    return nf;
-}
-
-template<int ARGC>
-PyObject* VM::bind_method(PyObject* obj, StrName name, NativeFuncC fn) {
-    check_type(obj, tp_type);
-    return bind_method<ARGC>(PK_OBJ_GET(Type, obj), name, fn);
-}
-
-template<int ARGC>
-PyObject* VM::bind_func(PyObject* obj, StrName name, NativeFuncC fn, UserData userdata, BindType bt) {
-    PyObject* nf = VAR(NativeFunc(fn, ARGC, false));
-    PK_OBJ_GET(NativeFunc, nf).set_userdata(userdata);
-    switch(bt){
-        case BindType::DEFAULT: break;
-        case BindType::STATICMETHOD: nf = VAR(StaticMethod(nf)); break;
-        case BindType::CLASSMETHOD: nf = VAR(ClassMethod(nf)); break;
+template<typename T>
+PyVar VM::register_user_class(PyVar mod, StrName name, RegisterFunc _register, Type base, bool subclass_enabled){
+    PyVar type = new_type_object(mod, name, base, subclass_enabled);
+    mod->attr().set(name, type);
+    _cxx_typeid_map[typeid(T)] = PK_OBJ_GET(Type, type);
+    _register(this, mod, type);
+    if(!type->attr().contains(__new__)){
+        if constexpr(std::is_default_constructible_v<T>) {
+            bind_func(type, __new__, -1, [](VM* vm, ArgsView args){
+                Type cls_t = PK_OBJ_GET(Type, args[0]);
+                return vm->heap.gcnew<T>(cls_t);
+            });
+        }else{
+            bind_func(type, __new__, -1, PK_ACTION(vm->NotImplementedError()));
+        }
     }
-    obj->attr().set(name, nf);
-    return nf;
+    return type;
+}
+
+template<typename T>
+PyVar VM::register_user_class(PyVar mod, StrName name, Type base, bool subclass_enabled){
+    return register_user_class<T>(mod, name, &T::_register, base, subclass_enabled);
 }
 
 /*template<typename T>

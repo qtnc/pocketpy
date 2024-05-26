@@ -31,7 +31,7 @@ inline Binder (VM* vm1, PyObject* mod1, PyObject* obj1 = nullptr): vm(vm1), mod(
 template<typename Ret, typename... Params>
 inline Binder& bind (const char* sig, Ret(*func)(Params...), const char* doc = nullptr){
     auto proxy = new NativeProxyFuncC<Ret, Params...>(func);
-    vm->bind(obj, sig, doc, proxy_wrapper, proxy);
+    vm->bind(obj, sig, doc, __proxy_wrapper, proxy);
 return *this;
 }
 
@@ -39,7 +39,7 @@ template<typename T, typename Ret, typename... Params>
 inline Binder& bind (const char* sig, Ret(T::*func)(Params...), const char* doc = nullptr){
 typedef Ret(B::*BF)(Params...);
     auto proxy = new NativeProxyMethodC<Ret, B, Params...>( (BF) func);
-    vm->bind(obj, sig, doc, proxy_wrapper, proxy);
+    vm->bind(obj, sig, doc, __proxy_wrapper, proxy);
 return *this;
 }
 
@@ -112,7 +112,7 @@ typedef GP(B::*Getter)();
 typedef SR(B::*Setter)(SP);
     auto proxyGetter = getter? new NativeProxyMethodC<GP, B>((Getter)getter) :nullptr;
     auto proxySetter = setter? new NativeProxyMethodC<SR, B, SP>((Setter)setter) :nullptr;
-vm->bind_property(obj, name, getter?proxy_wrapper:nullptr, setter?proxy_wrapper:nullptr, proxyGetter, proxySetter);
+vm->bind_property(obj, name, getter?__proxy_wrapper:nullptr, setter?__proxy_wrapper:nullptr, proxyGetter, proxySetter);
 return *this;
 }
 
@@ -125,7 +125,7 @@ template<class T, class GP, class SP, class SR>
 Binder& bindProp (const char* name, GP(*getter)(T), SR(*setter)(T,SP), const char* doc = nullptr) {
     auto proxyGetter = getter? new NativeProxyFuncC<GP, T>(getter) :nullptr;
     auto proxySetter = setter? new NativeProxyFuncC<SR, T, SP>(setter) :nullptr;
-vm->bind_property(obj, name, getter?proxy_wrapper:nullptr, setter?proxy_wrapper:nullptr, proxyGetter, proxySetter);
+vm->bind_property(obj, name, getter?__proxy_wrapper:nullptr, setter?__proxy_wrapper:nullptr, proxyGetter, proxySetter);
 return *this;
 }
 
@@ -138,7 +138,7 @@ template<class GP, class SP, class SR>
 Binder& bindProp (const char* name, GP(*getter)(), SR(*setter)(SP), const char* doc = nullptr) {
     auto proxyGetter = getter? new NativeProxyFuncC<GP>(getter) :nullptr;
     auto proxySetter = setter? new NativeProxyFuncC<SR, SP>(setter) :nullptr;
-vm->bind_property(obj, name, getter?proxy_wrapper:nullptr, setter?proxy_wrapper:nullptr, proxyGetter, proxySetter);
+vm->bind_property(obj, name, getter?__proxy_wrapper:nullptr, setter?__proxy_wrapper:nullptr, proxyGetter, proxySetter);
 return *this;
 }
 

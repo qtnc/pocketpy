@@ -560,7 +560,11 @@ exprGenComp(prev_i);
         if(callback == nullptr) callback = &Compiler::compile_stmt;
         consume(TK(":"));
         if(curr().type!=TK("@eol") && curr().type!=TK("@eof")){
-            compile_stmt();     // inline block
+            while(true){
+                compile_stmt();
+                bool possible = curr().type!=TK("@eol") && curr().type!=TK("@eof");
+                if(prev().type != TK(";") || !possible) break;
+            }
             return;
         }
         if(!match_newlines(mode()==REPL_MODE)){
@@ -739,9 +743,10 @@ __EAT_DOTS_END:
     void Compiler::compile_try_except() {
         ctx()->enter_block(CodeBlockType::TRY_EXCEPT);
         compile_block_body();
-        pod_vector<int> patches = {
+        small_vector_2<int, 6> patches;
+        patches.push_back(
             ctx()->emit_(OP_JUMP_ABSOLUTE, BC_NOARG, BC_KEEPLINE)
-        };
+        );
         ctx()->exit_block();
 
         int finally_entry = -1;
@@ -1154,7 +1159,7 @@ __EAT_DOTS_END:
                     break;
                 case 2: {
                     consume(TK("="));
-                    PyObject* value = read_literal();
+                    PyVar value = read_literal();
                     if(value == nullptr){
                         SyntaxError(Str("default argument must be a literal"));
                     }
@@ -1183,7 +1188,7 @@ __EAT_DOTS_END:
 
         decl->docstring = nullptr;
         if(decl->code->codes.size()>=2 && decl->code->codes[0].op == OP_LOAD_CONST && decl->code->codes[1].op == OP_POP_TOP){
-            PyObject* c = decl->code->consts[decl->code->codes[0].arg];
+            PyVar c = decl->code->consts[decl->code->codes[0].arg];
             if(is_type(c, vm->tp_str)){
                 decl->code->codes[0].op = OP_NO_OP;
                 decl->code->codes[1].op = OP_NO_OP;
@@ -1203,8 +1208,8 @@ __EAT_DOTS_END:
         }
     }
 
-    PyObject* Compiler::to_object(const TokenValue& value){
-        PyObject* obj = nullptr;
+    PyVar Compiler::to_object(const TokenValue& value){
+        PyVar obj = nullptr;
         if(std::holds_alternative<i64>(value)){
             obj = VAR(std::get<i64>(value));
         }
@@ -1218,12 +1223,12 @@ __EAT_DOTS_END:
         return obj;
     }
 
-    PyObject* Compiler::read_literal(){
+    PyVar Compiler::read_literal(){
         advance();
         switch(prev().type){
             case TK("-"): {
                 consume(TK("@num"));
-                PyObject* val = to_object(prev().value);
+                PyVar val = to_object(prev().value);
                 return vm->py_negate(val);
             }
             case TK("@num"): return to_object(prev().value);
@@ -1403,7 +1408,7 @@ __EAT_DOTS_END:
 
     // TODO: refactor this
     void Lexer::throw_err(StrName type, Str msg, int lineno, const char* cursor){
-        PyObject* e_obj = vm->call(vm->builtins->attr(type), VAR(msg));
+        PyVar e_obj = vm->call(vm->builtins->attr(type), VAR(msg));
         Exception& e = PK_OBJ_GET(Exception, e_obj);
         e.st_push(src, lineno, cursor, "");
         throw e;

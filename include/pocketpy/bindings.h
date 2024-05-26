@@ -1,11 +1,11 @@
 #pragma once
 
 #include "cffi.h"
+#include "vm.h"
 
 namespace pkpy{
-
 struct NativeProxyFuncCBase {
-    virtual PyObject* operator()(VM* vm, ArgsView args) = 0;
+    virtual PyVar operator()(VM* vm, ArgsView args) = 0;
 };
 
 template<typename Ret, typename... Params>
@@ -15,13 +15,13 @@ struct NativeProxyFuncC final: NativeProxyFuncCBase {
     _Fp func;
     NativeProxyFuncC(_Fp func) : func(func) {}
 
-    PyObject* operator()(VM* vm, ArgsView args) override {
+    PyVar operator()(VM* vm, ArgsView args) override {
         PK_DEBUG_ASSERT(args.size() == N);
         return call<Ret>(vm, args, std::make_index_sequence<N>());
     }
 
     template<typename __Ret, size_t... Is>
-    PyObject* call(VM* vm, ArgsView args, std::index_sequence<Is...>){
+    PyVar call(VM* vm, ArgsView args, std::index_sequence<Is...>){
         if constexpr(std::is_void_v<__Ret>){
             func(py_cast<Params>(vm, args[Is])...);
             return vm->None;
@@ -39,13 +39,13 @@ struct NativeProxyMethodC final: NativeProxyFuncCBase {
     _Fp func;
     NativeProxyMethodC(_Fp func) : func(func) {}
 
-    PyObject* operator()(VM* vm, ArgsView args) override {
+    PyVar operator()(VM* vm, ArgsView args) override {
         PK_DEBUG_ASSERT(args.size() == N+1);
         return call<Ret>(vm, args, std::make_index_sequence<N>());
     }
 
     template<typename __Ret, size_t... Is>
-    PyObject* call(VM* vm, ArgsView args, std::index_sequence<Is...>){
+    PyVar call(VM* vm, ArgsView args, std::index_sequence<Is...>){
         T& self = PK_OBJ_GET(T, args[0]);   // use unsafe cast for derived classes
         if constexpr(std::is_void_v<__Ret>){
             (self.*func)(py_cast<Params>(vm, args[Is+1])...);
@@ -59,63 +59,72 @@ struct NativeProxyMethodC final: NativeProxyFuncCBase {
         }
     }
 };
-
-inline PyObject* proxy_wrapper(VM* vm, ArgsView args){
+/*****************************************************************/
+inline PyVar __proxy_wrapper(VM* vm, ArgsView args){
     NativeProxyFuncCBase* pf = lambda_get_userdata<NativeProxyFuncCBase*>(args.begin());
     return (*pf)(vm, args);
 }
 
 template<typename Ret, typename... Params>
-void _bind(VM* vm, PyObject* obj, const char* sig, Ret(*func)(Params...)){
-    auto proxy = new NativeProxyFuncC<Ret, Params...>(func);
-    vm->bind(obj, sig, proxy_wrapper, proxy);
+PyVar VM::bind(PyVar obj, const char* sig, Ret(*func)(Params...), BindType bt){
+    NativeProxyFuncCBase* proxy = new NativeProxyFuncC<Ret, Params...>(func);
+    return vm->bind(obj, sig, __proxy_wrapper, proxy, bt);
 }
 
 template<typename Ret, typename T, typename... Params>
-void _bind(VM* vm, PyObject* obj, const char* sig, Ret(T::*func)(Params...)){
-    auto proxy = new NativeProxyMethodC<Ret, T, Params...>(func);
-    vm->bind(obj, sig, proxy_wrapper, proxy);
+PyVar VM::bind(PyVar obj, const char* sig, Ret(T::*func)(Params...), BindType bt){
+    NativeProxyFuncCBase* proxy = new NativeProxyMethodC<Ret, T, Params...>(func);
+    return vm->bind(obj, sig, __proxy_wrapper, proxy, bt);
 }
 
-/*****************************************************************/
-#define PY_FIELD_EX(T, NAME, REF, EXPR)       \
-        vm->bind_property(type, NAME,               \
-            [](VM* vm, ArgsView args){              \
-                T& self = PK_OBJ_GET(T, args[0]);   \
-                return VAR(self.REF()->EXPR);       \
-            },                                      \
-            [](VM* vm, ArgsView args){              \
-                T& self = PK_OBJ_GET(T, args[0]);   \
-                self.REF()->EXPR = CAST(decltype(self.REF()->EXPR), args[1]);       \
-                return vm->None;                                                    \
-            });
+template<typename Ret, typename... Params>
+PyVar VM::bind(PyVar obj, const char* sig, const char* docstring, Ret(*func)(Params...), BindType bt){
+    NativeProxyFuncCBase* proxy = new NativeProxyFuncC<Ret, Params...>(func);
+    return vm->bind(obj, sig, docstring, __proxy_wrapper, proxy, bt);
+}
 
-#define PY_READONLY_FIELD_EX(T, NAME, REF, EXPR)            \
-        vm->bind_property(type, NAME,                       \
-            [](VM* vm, ArgsView args){                      \
-                T& self = PK_OBJ_GET(T, args[0]);           \
-                return VAR(self.REF()->EXPR);               \
-            });
+template<typename Ret, typename T, typename... Params>
+PyVar VM::bind(PyVar obj, const char* sig, const char* docstring, Ret(T::*func)(Params...), BindType bt){
+    NativeProxyFuncCBase* proxy = new NativeProxyMethodC<Ret, T, Params...>(func);
+    return vm->bind(obj, sig, docstring, __proxy_wrapper, proxy, bt);
+}
 
-#define PY_PROPERTY_EX(T, NAME, REF, FGET, FSET)  \
-        vm->bind_property(type, NAME,                   \
-            [](VM* vm, ArgsView args){                  \
-                T& self = PK_OBJ_GET(T, args[0]);       \
-                return VAR(self.REF()->FGET());         \
-            },                                          \
-            [](VM* vm, ArgsView args){                  \
-                T& self = _CAST(T&, args[0]);           \
-                using __NT = decltype(self.REF()->FGET());   \
-                self.REF()->FSET(CAST(__NT, args[1]));       \
-                return vm->None;                            \
-            });
+template<typename T, typename F, bool ReadOnly>
+PyVar VM::bind_field(PyVar obj, const char* name, F T::*field){
+    static_assert(!std::is_reference_v<F>);
+    PK_ASSERT(is_type(obj, tp_type));
+    std::string_view name_sv(name); int pos = name_sv.find(':');
+    if(pos > 0) name_sv = name_sv.substr(0, pos);
+    auto fget = [](VM* vm, ArgsView args) -> PyVar{
+        T& self = PK_OBJ_GET(T, args[0]);
+        F T::*field = lambda_get_userdata<F T::*>(args.begin());
+        return VAR(self.*field);
+    };
+    PyVar _0 = heap.gcnew<NativeFunc>(tp_native_func, fget, 1, field);
+    PyVar _1 = vm->None;
+    if constexpr (!ReadOnly){
+        auto fset = [](VM* vm, ArgsView args){
+            T& self = PK_OBJ_GET(T, args[0]);
+            F T::*field = lambda_get_userdata<F T::*>(args.begin());
+            self.*field = py_cast<F>(vm, args[1]);
+            return vm->None;
+        };
+        _1 = heap.gcnew<NativeFunc>(tp_native_func, fset, 2, field);
+    }
+    PyVar prop = VAR(Property(_0, _1));
+    obj->attr().set(StrName(name_sv), prop);
+    return prop;
+}
 
-#define PY_READONLY_PROPERTY_EX(T, NAME, REF, FGET)  \
-        vm->bind_property(type, NAME,                   \
-            [](VM* vm, ArgsView args){                  \
-                T& self = PK_OBJ_GET(T, args[0]);       \
-                return VAR(self.REF()->FGET());         \
-            });
+template<typename Ret, typename... Params>
+[[deprecated]] void _bind(VM* vm, PyVar obj, const char* sig, Ret(*func)(Params...)){
+    return vm->bind(obj, sig, func);
+}
+
+template<typename Ret, typename T, typename... Params>
+[[deprecated]] void _bind(VM* vm, PyVar obj, const char* sig, Ret(T::*func)(Params...)){
+    return vm->bind(obj, sig, func);
+}
 /*****************************************************************/
 #define PY_FIELD(T, NAME, EXPR)       \
         vm->bind_property(type, NAME,               \
@@ -156,33 +165,32 @@ void _bind(VM* vm, PyObject* obj, const char* sig, Ret(T::*func)(Params...)){
                 return VAR(self.FGET());                \
             });
 /*****************************************************************/
-
 #define PY_STRUCT_LIKE(wT)   \
         static_assert(std::is_trivially_copyable<wT>::value);                       \
         type->attr().set("__struct__", vm->True);                                   \
-        vm->bind_func<1>(type, "from_struct", [](VM* vm, ArgsView args){            \
-            C99Struct& s = CAST(C99Struct&, args[0]);                               \
+        vm->bind_func(type, "fromstruct", 1, [](VM* vm, ArgsView args){             \
+            Struct& s = CAST(Struct&, args[0]);                                     \
             if(s.size != sizeof(wT)) vm->ValueError("size mismatch");               \
-            PyObject* obj = vm->new_user_object<wT>();                              \
-            memcpy(&_CAST(wT&, obj), s.p, sizeof(wT));                           \
+            PyVar obj = vm->new_user_object<wT>();                              \
+            memcpy(&_CAST(wT&, obj), s.p, sizeof(wT));                              \
             return obj;                                                             \
         }, {}, BindType::STATICMETHOD);                                             \
-        vm->bind_method<0>(type, "to_struct", [](VM* vm, ArgsView args){            \
+        vm->bind_func(type, "tostruct", 1, [](VM* vm, ArgsView args){             \
             wT& self = _CAST(wT&, args[0]);                                         \
-            return vm->new_user_object<C99Struct>(&self, sizeof(wT));                          \
+            return vm->new_user_object<Struct>(&self, sizeof(wT));                  \
         });                                                                         \
-        vm->bind_method<0>(type, "addr", [](VM* vm, ArgsView args){                 \
+        vm->bind_func(type, "addr", 1, [](VM* vm, ArgsView args){                 \
             wT& self = _CAST(wT&, args[0]);                                         \
-            return vm->new_user_object<VoidP>(&self);                                          \
+            return vm->new_user_object<VoidP>(&self);                               \
         });                                                                         \
-        vm->bind_method<0>(type, "copy", [](VM* vm, ArgsView args){                 \
+        vm->bind_func(type, "copy", 1, [](VM* vm, ArgsView args){                 \
             wT& self = _CAST(wT&, args[0]);                                         \
-            return vm->new_user_object<wT>(self);                                            \
+            return vm->new_user_object<wT>(self);                                   \
         });                                                                         \
-        vm->bind_method<0>(type, "sizeof", [](VM* vm, ArgsView args){               \
+        vm->bind_func(type, "sizeof", 1, [](VM* vm, ArgsView args){               \
             return VAR(sizeof(wT));                                                 \
         });                                                                         \
-        vm->bind__eq__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* _0, PyObject* _1){  \
+        vm->bind__eq__(PK_OBJ_GET(Type, type), [](VM* vm, PyVar _0, PyVar _1){  \
             wT& self = _CAST(wT&, _0);                                              \
             if(!vm->isinstance(_1, vm->_tp_user<wT>())) return vm->NotImplemented;  \
             wT& other = _CAST(wT&, _1);                                             \
@@ -190,13 +198,13 @@ void _bind(VM* vm, PyObject* obj, const char* sig, Ret(T::*func)(Params...)){
         });                                                                         \
 
 #define PY_POINTER_SETGETITEM(T) \
-        vm->bind__getitem__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* _0, PyObject* _1){  \
+        vm->bind__getitem__(PK_OBJ_GET(Type, type), [](VM* vm, PyVar _0, PyVar _1){  \
             VoidP& self = PK_OBJ_GET(VoidP, _0);                                       \
             i64 i = CAST(i64, _1);                                                      \
             T* tgt = reinterpret_cast<T*>(self.ptr);                                    \
             return VAR(tgt[i]);                                                         \
         });                                                                             \
-        vm->bind__setitem__(PK_OBJ_GET(Type, type), [](VM* vm, PyObject* _0, PyObject* _1, PyObject* _2){  \
+        vm->bind__setitem__(PK_OBJ_GET(Type, type), [](VM* vm, PyVar _0, PyVar _1, PyVar _2){  \
             VoidP& self = PK_OBJ_GET(VoidP, _0);                                       \
             i64 i = CAST(i64, _1);                                                      \
             T* tgt = reinterpret_cast<T*>(self.ptr);                                    \
